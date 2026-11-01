@@ -1,0 +1,137 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "list-certificates-v2 output",
+    "$id": "http://schema.nethserver.org/traefik/list-certificates-v2-output.json",
+    "description": "List the TLS certificates obtained by ACME or manually uploaded, with detailed attributes",
+    "examples": [
+        {
+            "certificates": [
+                {
+                    "names": [
+                        "mail.dp.nethserver.net"
+                    ],
+                    "subject": "mail.dp.nethserver.net",
+                    "issuer": "Custom Intermediate CA",
+                    "serial": "603545327999770137768033575467090432240151056165",
+                    "valid_to": "2026-02-07T14:19:38+00:00",
+                    "valid_from": "2025-02-07T14:19:38+00:00",
+                    "path": "custom_certificates/mail.dp.nethserver.net.crt",
+                    "validity": "valid",
+                    "type": "custom"
+                },
+                {
+                    "names": [
+                        "dokuwiki1.dp.nethserver.net"
+                    ],
+                    "subject": "dokuwiki1.dp.nethserver.net",
+                    "issuer": "(STAGING) Tenuous Tomato R13",
+                    "serial": "3918504633558580209040851109284865639469365",
+                    "valid_to": "2025-12-02T09:56:55+00:00",
+                    "valid_from": "2025-09-03T09:56:56+00:00",
+                    "validity": "valid",
+                    "type": "internal",
+                    "automatic": true
+                },
+                {
+                    "names": [
+                        "manual.dp.nethserver.net"
+                    ],
+                    "subject": "manual.dp.nethserver.net",
+                    "issuer": "(STAGING) Riddling Rhubarb R12",
+                    "serial": "3853031702502281198931684732356056127155675",
+                    "valid_to": "2025-12-02T10:06:40+00:00",
+                    "valid_from": "2025-09-03T10:06:41+00:00",
+                    "validity": "valid",
+                    "type": "internal"
+                },
+                {
+                    "names": [
+                        "rl1.dp.nethserver.net",
+                        "mail.dp.nethserver.net"
+                    ],
+                    "subject": "rl1.dp.nethserver.net",
+                    "issuer": "(STAGING) Riddling Rhubarb R12",
+                    "serial": "3865367987766600338566272990214152225581583",
+                    "valid_to": "2025-12-02T13:38:13+00:00",
+                    "valid_from": "2025-09-03T13:38:14+00:00",
+                    "validity": "valid",
+                    "type": "internal",
+                    "default": true
+                }
+            ]
+        }
+    ],
+    "type": "object",
+    "properties": {
+        "certificates": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/tlscert"
+            }
+        }
+    },
+    "$defs": {
+        "tlscert": {
+            "description": "TLS certificate object",
+            "type": "object",
+            "required": [
+                "type",
+                "names"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Possible values: internal (acme.json), custom (uploaded)",
+                    "enum": [
+                        "internal",
+                        "custom"
+                    ]
+                },
+                "default": {
+                    "type": "boolean",
+                    "description": "True, if the certificate names satisfy the default certificate configuration"
+                },
+                "automatic": {
+                    "type": "boolean",
+                    "description": "True, if the internal certificate is referenced by at least one HTTP route Let's Encrypt configuration"
+                },
+                "obsolete": {
+                    "type": "boolean",
+                    "description": "True, if the certificate is not referenced/used by current Traefik configuration"
+                },
+                "names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "validity": {
+                    "enum": [
+                        "valid",
+                        "expiring",
+                        "expired"
+                    ]
+                },
+                "subject": {
+                    "type": "string"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_to": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Filesystem path of the custom certificate. Other certificate types do not have this attribute."
+                },
+                "serial": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

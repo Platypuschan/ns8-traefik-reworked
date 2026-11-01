@@ -1,0 +1,90 @@
+#!/usr/bin/env sh
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e
+
+CERT_FILE=uploaded_cert
+KEY_FILE=uploaded_key
+VALID_KEY=0
+TYPE_KEY=""
+
+del_certs() {
+    rm -f $KEY_FILE $CERT_FILE
+}
+
+# checking if key has a passphrase
+if ! openssl pkey -in $KEY_FILE -passin pass: >/dev/null 2>&1; then
+    echo "A key with a passphrase is not allowed." 1>&2
+    echo "set-status validation-failed" >&${AGENT_COMFD:-2}
+    printf '[{"field":"keyFile","parameter":"keyFile","value":"","error":"invalid_key"}]\n'
+    del_certs
+    exit 2
+fi
+
+# checking if key is valid
+if openssl rsa -check -in $KEY_FILE >/dev/null 2>&1; then
+    VALID_KEY=1
+    TYPE_KEY="rsa"
+elif openssl dsa -check -in $KEY_FILE >/dev/null 2>&1; then
+    VALID_KEY=1
+    TYPE_KEY="dsa"
+elif openssl ec -check -in $KEY_FILE >/dev/null 2>&1; then
+    VALID_KEY=1
+    TYPE_KEY="ec"
+fi
+
+if [ $VALID_KEY -eq 0 ]; then
+    echo "Key validation failed." 1>&2
+    echo "set-status validation-failed" >&${AGENT_COMFD:-2}
+    printf '[{"field":"keyFile","parameter":"keyFile","value":"","error":"invalid_key"}]\n'
+    del_certs
+    exit 2
+fi
+
+# check if certificate is properly pam formatted
+if ! openssl x509 -text -noout -in $CERT_FILE >/dev/null 2>&1; then
+    echo "Certificate not well formatted." 1>&2
+    echo "set-status validation-failed" >&${AGENT_COMFD:-2}
+    printf '[{"field":"certFile","parameter":"certFile","value":"","error":"invalid_format"}]\n'
+    del_certs
+    exit 4
+fi
+
+# check it the common name is present and is not empty
+cn_name=$(openssl x509 -noout -subject -nameopt=multiline -in $CERT_FILE | sed -n 's/ *commonName *= //p')
+if [ -z "$cn_name" ]; then
+    echo "Certificate doesn't have a common name." 1>&2
+    echo "set-status validation-failed" >&${AGENT_COMFD:-2}
+    printf '[{"field":"certFile","parameter":"certFile","value":"","error":"empty_common_name"}]\n'
+    del_certs
+    exit 5
+fi
+
+# check if cert is provided by key (we compare md5 of public keys)
+cert_public_key="$(openssl x509 -noout -pubkey -in  $CERT_FILE | openssl md5)"
+key_public_key="$(openssl  pkey -pubout -in $KEY_FILE | openssl md5)"
+
+
+if [ "$cert_public_key" != "$key_public_key" ]; then
+    echo "Key didn't generate certificate." 1>&2
+    echo "set-status validation-failed" >&${AGENT_COMFD:-2}
+    printf '[{"field":"certFile","parameter":"certFile","value":"","error":"key_mismatch"}]\n'
+    del_certs
+    exit 3
+fi
+
+# Set default certificate verification type:
+: "${UPLOAD_CERTIFICATE_VERIFY_TYPE:=chain}"
+if [ "${UPLOAD_CERTIFICATE_VERIFY_TYPE}" = chain ] && ! openssl verify -untrusted $CERT_FILE $CERT_FILE 1>&2 ; then
+    echo "set-status validation-failed" >&"${AGENT_COMFD:-2}"
+    printf '[{"field":"chainFile","parameter":"certFile","value":"","error":"cert_verification_failed_chain"}]\n'
+    exit 33 # certificate chain verification failed
+elif [ "${UPLOAD_CERTIFICATE_VERIFY_TYPE}" = selfsign ] && ! openssl verify -CAfile $CERT_FILE -untrusted $CERT_FILE $CERT_FILE 1>&2 ; then
+    echo "set-status validation-failed" >&"${AGENT_COMFD:-2}"
+    printf '[{"field":"certFile","parameter":"certFile","value":"","error":"cert_verification_failed_selfsigned"}]\n'
+    exit 34 # self-signed certificate verification failed
+fi

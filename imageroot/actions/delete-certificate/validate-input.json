@@ -1,0 +1,77 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "delete-certificate input",
+    "$id": "http://schema.nethserver.org/traefik/set-certificate-input.json",
+    "description": "Delete one or more TLS certificates matching the input",
+    "examples": [
+        {
+            "path": "custom_certificates/mycert.crt",
+            "type": "custom"
+        },
+        {
+            "obsolete": true,
+            "type": "internal"
+        },
+        {
+            "serial": "548155130505306540286255320287329564948959",
+            "type": "internal"
+        }
+    ],
+    "type": "object",
+    "oneOf": [
+        {
+            "required": [
+                "obsolete",
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "const": "internal"
+                },
+                "obsolete": {
+                    "const": true
+                }
+            }
+        },
+        {
+            "required": [
+                "serial",
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "const": "internal"
+                }
+            }
+        },
+        {
+            "required": [
+                "path",
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "const": "custom"
+                }
+            }
+        }
+    ],
+    "properties": {
+        "type": {
+            "type": "string",
+            "description": "Identify where the certificate is stored: internal (acme.json), custom (uploaded)"
+        },
+        "obsolete": {
+            "description": "Delete any internal certificate marked as obsolete",
+            "type": "boolean"
+        },
+        "serial": {
+            "description": "Delete the internal certificate with the given serial number",
+            "type": "string"
+        },
+        "path": {
+            "description": "Delete the uploaded certificate with the given filesystem path",
+            "type": "string"
+        }
+    }
+}

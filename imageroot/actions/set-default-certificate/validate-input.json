@@ -1,0 +1,49 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "set-default-certificate input",
+    "$id": "http://schema.nethserver.org/traefik/set-default-certificate.json",
+    "description": "Change Traefik's configuration to obtain and enable a new default certificate with the required names",
+    "type": "object",
+    "required": [
+        "names"
+    ],
+    "properties": {
+        "check_routes": {
+            "type": "boolean",
+            "default": true,
+            "description": "Check if requested names are already used by HTTP routes"
+        },
+        "sync_timeout": {
+            "type": "integer",
+            "default": 60,
+            "description": "Max number of seconds to wait for an ACME certificate response"
+        },
+        "merge": {
+            "type": "boolean",
+            "description": "If true, the resulting certificate names will be the union of the current certificate names with the requested names.",
+            "default": false
+        },
+        "names": {
+            "type": "array",
+            "minItems": 1,
+            "examples": [
+                [
+                    "www.nethserver.org",
+                    "*.nethserver.com"
+                ]
+            ],
+            "items": {
+                "type": "string",
+                "oneOf": [
+                    {
+                        "format": "hostname",
+                        "pattern": "\\."
+                    },
+                    {
+                        "pattern": "^\\*\\..+\\..+"
+                    }
+                ]
+            }
+        }
+    }
+}

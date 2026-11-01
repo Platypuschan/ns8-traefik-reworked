@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import os
+import sys
+import agent
+import yaml
+import glob
+import cert_helpers
+
+yaml_options = {
+    "default_flow_style": False,
+    "sort_keys": False,
+    "allow_unicode": True,
+}
+
+def main():
+    agent.run_helper("mkdir", "-vp", "manual_flags")
+    static_cfg = yaml.safe_load(open("traefik.yaml"))
+    upgrade_to_v3(static_cfg)
+    add_metrics(static_cfg) # 3.5+
+
+def add_metrics(static_cfg):
+    if 'metrics' in static_cfg.get('entryPoints', {}):
+        return # nothing to do
+    print("Add Traefik metrics endpoint configuration for version 3.5+")
+    static_cfg['entryPoints']['metrics'] = {"address": ":8082"}
+    static_cfg['metrics'] = {"prometheus": {"entryPoint": "metrics"}}
+    write_static_cfg(static_cfg)
+
+def upgrade_to_v3(static_cfg):
+    if not 'core' in static_cfg:
+        static_cfg['core'] = {}
+    elif static_cfg['core'].get('defaultRuleSyntax') == 'v3':
+        return # Nothing to do
+    print("Upgrading configuration for Traefik v3")
+    agent.run_helper("mkdir", "-vp", "acme")
+    agent.run_helper("podman", "cp", "traefik:/etc/traefik/acme/acme.json", "acme/acme.json")
+    agent.run_helper("cp", "-vfT", "traefik.yaml", "traefik.yaml.v2")
+    agent.run_helper("cp", "-rvfT", "configs", "configs.v2")
+    agent.run_helper("cp", "-rvfT", "custom_certificates", "custom_certificates.v2")
+    # Merge special routers for certificates into one default certificate:
+    defcertnames = list()
+    certificate_config_files = list(glob.glob("./configs/certificate-*.yml"))
+    for config_file in certificate_config_files:
+        try:
+            with open(config_file) as ofile:
+                certdyn = yaml.safe_load(ofile) or {}
+                upgrade_as_default_certificate(certdyn, defcertnames)
+        except Exception as ex:
+            print("ERROR", config_file, ex, file=sys.stderr)
+        os.unlink(config_file)
+        print("Remove certificate config file:", config_file, file=sys.stderr)
+    if defcertnames:
+        print("Recording names for defaultGeneratedCert:", defcertnames, file=sys.stderr)
+        cert_helpers.add_default_certificate_name(defcertnames[0], sans=defcertnames[1:])
+    # Required configuration upgrade from v2 to v3 format:
+    static_cfg['core']['defaultRuleSyntax'] = 'v3'
+    static_cfg['log'] = {'noColor': True, 'level': 'INFO'}
+    for config_file in glob.glob("./configs/*.yml"):
+        try:
+            with open(config_file) as ofile:
+                dynamic_config = yaml.safe_load(ofile) or {}
+            if 'http' in dynamic_config:
+                upgrade_http_to_v3(dynamic_config['http'])
+            write_dynamic_config(config_file, dynamic_config)
+        except Exception as ex:
+            print("ERROR", config_file, ex, file=sys.stderr)
+    write_static_cfg(static_cfg)
+
+def upgrade_as_default_certificate(certdyn : dict, defcertnames : list):
+    """Transform the router TLS configuration into configuration for
+    defaultGeneratedCert."""
+    try:
+        _, router = certdyn['http']['routers'].popitem()
+        odomain = router['tls']['domains'].pop()
+        certnames = {odomain['main']} | set(odomain.get('sans', []))
+        del certdyn['http']
+    except (KeyError, IndexError) as ex:
+        print("Certificate router parse error", ex, file=sys.stderr)
+        return # skip upgrade: the router is not as we expect
+    for name in certnames:
+        if name not in defcertnames and cert_helpers.has_acmejson_name(name):
+            # If a certificate was already obtained for name, consider it
+            # valid and add to the new certificate
+            defcertnames.append(name)
+
+def upgrade_http_to_v3(ohttp):
+    """Upgrade an http dynamic configuration to Traefik v3 format."""
+    if 'routers' in ohttp:
+        for krouter in ohttp['routers']:
+            orouter = ohttp['routers'][krouter]
+            is_http = krouter.endswith("-http")
+            is_https = krouter.endswith("-https")
+            is_certificate = krouter.startswith("certificate-")
+            is_api = krouter == "ApisEndpointHttp"
+            if type(orouter.get('entryPoints')) is str:
+                if is_http:
+                    orouter['entryPoints'] = ['http']
+                elif is_https or is_certificate:
+                    orouter['entryPoints'] = ['https']
+                else:
+                    orouter['entryPoints'] = orouter['entryPoints'].split(",")
+                print(f"Replaced string value for entryPoints in {krouter}", orouter['entryPoints'])
+            if not 'ruleSyntax' in orouter and not (is_http or is_https or is_certificate or is_api):
+                orouter['ruleSyntax'] = 'v2' # retain custom router rule syntax v2-compatible
+            if 'tls' in orouter and is_https:
+                try:
+                    del orouter['tls']['domains']
+                    print(f"Removed TLS domains in {krouter}")
+                except:
+                    pass
+    if 'middlewares' in ohttp:
+        for kmiddleware in ohttp['middlewares']:
+            omw = ohttp['middlewares'][kmiddleware]
+            if 'ipWhiteList' in omw:
+                omw.setdefault('IPAllowList', {}) # initialize if missing
+                # Merge ipWhiteList settings into IPAllowList:
+                omw['IPAllowList'].update(omw['ipWhiteList'])
+                del omw['ipWhiteList'] # remove obsolete key
+                print(f"Converted middleware ipWhiteList in {kmiddleware} to IPAllowList")
+            if 'stripPrefix' in omw:
+                if 'forceSlash' in omw['stripPrefix']:
+                    del omw['stripPrefix']['forceSlash']
+                    print(f"Removed forceSlash option from middleware {kmiddleware}")
+
+def write_dynamic_config(config_file, dynamic_config):
+    """Atomically overwrite a Traefik dynamic config file with a new
+    configuration."""
+    global yaml_options
+    with open(config_file + ".tmp", "w") as ofile:
+        yaml.safe_dump(dynamic_config, stream=ofile, **yaml_options)
+    os.rename(config_file + ".tmp", config_file)
+    print(f"Dynamic configuration written to {config_file}")
+
+def write_static_cfg(static_cfg):
+    """Atomically overwrite Traefik's static config file with a new
+    configuration."""
+    global yaml_options
+    with open("traefik.yaml.tmp", "w") as ofile:
+        yaml.safe_dump(static_cfg, stream=ofile, **yaml_options)
+    os.rename("traefik.yaml.tmp", "traefik.yaml")
+    print("Static configuration written to traefik.yaml")
+
+if __name__ == "__main__":
+    main()

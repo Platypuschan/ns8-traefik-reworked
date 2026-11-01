@@ -1,0 +1,192 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "list-routes output",
+    "$id": "http://schema.nethserver.org/samba/list-routes-output.json",
+    "description": "Return a list of configured routes",
+    "examples": [
+        [
+            {
+                "instance": "module1",
+                "skip_cert_verify": false,
+                "host": "host.domain.com",
+                "path": "/Path",
+                "url": "http://192.168.1.100",
+                "lets_encrypt": false,
+                "http2https": true,
+                "user_created": true
+            }
+        ],
+        [
+            "module1"
+        ],
+        []
+    ],
+    "type": "array",
+    "items": {
+        "oneOf": [
+            {
+                "type": "object",
+                "title": "A route expanded",
+                "properties": {
+                    "instance": {
+                        "type": "string",
+                        "title": "Instance name",
+                        "examples": [
+                            "module1"
+                        ],
+                        "description": "The instance name, which is unique inside the cluster."
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "title": "Backend URL",
+                        "description": "The backend target URL."
+                    },
+                    "host": {
+                        "type": "string",
+                        "format": "hostname",
+                        "title": "Virtualhost",
+                        "description": "A fully qualified domain name as virtualhost."
+                    },
+                    "path": {
+                        "type": "string",
+                        "pattern": "^/.*$",
+                        "title": "Request path prefix",
+                        "description": "A path prefix, the matching evaluation will be performed whit and without the trailing slash, eg /foo will match `/foo and `/foo/*, also `/foo/` will match /foo and /foo/*",
+                        "examples": [
+                            "/foo",
+                            "/foo/"
+                        ]
+                    },
+                    "lets_encrypt": {
+                        "type": "boolean",
+                        "title": "Let's Encrypt certificate",
+                        "description": "Request a valid Let's Encrypt certificate."
+                    },
+                    "lets_encrypt_status": {
+                        "examples": [
+                            "pending"
+                        ],
+                        "type": "string",
+                        "description": "If Let's Encrypt certificate is requested, report the current certificate status."
+                    },
+                    "http2https": {
+                        "type": "boolean",
+                        "title": "HTTP to HTTPS redirection",
+                        "description": "Redirect all the HTTP requests to HTTPS"
+                    },
+                    "strip_prefix": {
+                        "type": "boolean",
+                        "title": "Strip prefix path",
+                        "description": "Strip the path prefix from the request"
+                    },
+                    "skip_cert_verify": {
+                        "type": "boolean",
+                        "title": "Skip certificate verification",
+                        "description": "Do not verify the backend's certificate"
+                    },
+                    "user_created": {
+                        "type": "boolean",
+                        "title": "User created route flag",
+                        "description": "If true, the route is flagged as manually created by a user"
+                    },
+                    "headers": {
+                        "type": "object",
+                        "title": "Headers list",
+                        "description": "Headers to add or remove from an HTTP's request or response",
+                        "additionalProperties": false,
+                        "examples": [
+                            {
+                                "headers": {
+                                    "request": {
+                                        "X-foo-add": "foo",
+                                        "X-bar-remove": ""
+                                    },
+                                    "response": {
+                                        "X-bar-add": "bar",
+                                        "X-foo-remove": ""
+                                    }
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "request": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "patternProperties": {
+                                    "^.+$": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "response": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "patternProperties": {
+                                    "^.+$": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "forward_auth": {
+                        "type": "object",
+                        "required": [
+                            "address"
+                        ],
+                        "title": "Forward Auth configuration",
+                        "description": "If set enabled forwardAuth prop on traefik",
+                        "properties": {
+                            "address": {
+                                "type": "string",
+                                "format": "uri",
+                                "title": "The server address",
+                                "description": "The address option defines the authentication server address"
+                            },
+                            "skip_tls_verify": {
+                                "type": "boolean",
+                                "title": "Skip TLS verify",
+                                "description": "If insecureskipCertVerify is true, the TLS connection to the authentication server accepts any certificate presented by the server regardless of the hostnames it covers"
+                            }
+                        }
+                    }
+                },
+                "required": [
+                    "instance",
+                    "url",
+                    "http2https",
+                    "user_created"
+                ],
+                "anyOf": [
+                    {
+                        "required": [
+                            "host"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "path"
+                        ]
+                    }
+                ],
+                "dependencies": {
+                    "host": {
+                        "required": [
+                            "lets_encrypt"
+                        ]
+                    },
+                    "strip_prefix": {
+                        "required": [
+                            "path"
+                        ]
+                    }
+                }
+            },
+            {
+                "type": "string",
+                "title": "Name of the route"
+            }
+        ]
+    }
+}

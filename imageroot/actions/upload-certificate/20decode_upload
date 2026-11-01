@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+from json import load
+from sys import stdin
+from base64 import b64decode
+
+import agent
+
+agent.set_weight('20decode_upload', 0)
+agent.set_weight('21validate_certificates', 0)
+
+CERT_FILE = 'uploaded_cert'
+KEY_FILE = 'uploaded_key'
+
+data = load(stdin)
+
+# decode certificate to file
+with open(CERT_FILE, 'w', encoding='UTF-8') as file:
+    file.writelines(b64decode(data["certFile"]).decode())
+
+# decode key to file
+with open(KEY_FILE, 'w', encoding='UTF-8') as file:
+    file.writelines(b64decode(data["keyFile"]).decode())

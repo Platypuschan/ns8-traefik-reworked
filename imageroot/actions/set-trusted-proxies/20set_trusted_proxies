@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import agent
+import json
+import sys
+import conf_helpers
+import ipaddress
+
+def main():
+    request = json.load(sys.stdin)
+    validate_request(request)
+    curconf = conf_helpers.parse_yaml_config("traefik.yaml")
+    curconf['entryPoints']['http'].setdefault('forwardedHeaders', {"trustedIPs": []})
+    curconf['entryPoints']['https'].setdefault('forwardedHeaders', {"trustedIPs": []})
+    curconf['entryPoints']['http']['forwardedHeaders']["trustedIPs"] = request['proxies']
+    curconf['entryPoints']['https']['forwardedHeaders']["trustedIPs"] = request['proxies']
+    conf_helpers.write_yaml_config(curconf, "traefik.yaml")
+    if len(request['proxies']) > 0:
+        agent.set_env('PROXIES_DEPTH', str(request.get('depth', 1)))
+    else:
+        agent.set_env('PROXIES_DEPTH', '0')
+    agent.run_helper("systemctl", "--user", "restart", "traefik.service").check_returncode()
+
+def validate_request(request):
+    for ipvalue in request['proxies']:
+        # Check if ipvalue is a string representing IPv4 or IPv6
+        try:
+            # IP validation
+            ipaddress.ip_address(ipvalue)
+        except ValueError:
+            agent.set_status('validation-failed')
+            json.dump([{'field':'proxies','parameter':'proxies','value': ipvalue,'error':'bad_ip_address'}], fp=sys.stdout)
+            sys.exit(3)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,40 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e    # exit immediately if an error occurs
+exec 1>&2 # ensure any output is sent to stderr
+
+#
+# Allow other modules to call our *-route actions by requiring the "routeadm" role
+#
+routeadm_actions=(
+    delete-route
+    set-route
+    get-route
+    list-routes
+)
+redis-exec SADD "${AGENT_ID}/roles/routeadm" "${routeadm_actions[@]}"
+
+#
+# Allow other modules to call our *-certificate actions by requiring the "certadm" role
+#
+certadm_actions=(
+    delete-certificate
+    set-certificate
+    set-default-certificate
+    get-certificate
+    list-certificates
+)
+redis-exec SADD "${AGENT_ID}/roles/certadm" "${certadm_actions[@]}"
+
+#
+# Grant all actions
+#
+redis-exec SADD "${AGENT_ID}/roles/fulladm" "${certadm_actions[@]}" "${routeadm_actions[@]}"
+
+# Allow module to call `set-route` on himself
+redis-exec SADD "${AGENT_ID}/roles/selfadm" "set-route"

@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import agent
+from get_route import get_route
+
+# Try to parse the stdin as JSON.
+# If parsing fails, output everything to stderr
+
+json.dump(get_route(json.load(sys.stdin)), fp=sys.stdout)

@@ -1,0 +1,26 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+#
+# Generate a self-signed certificate for a random FQDN
+#
+
+set -e
+
+# Redirect any output to the journal (stderr)
+exec 1>&2
+
+NAME="selfsigned"
+FQDN="host-$(printf %05d ${RANDOM}).ns8.test"
+addresses=''
+
+# Do not override existing certs
+if [ -e $NAME.crt ] && [ -e $NAME.key ]; then
+    exit 0
+fi
+
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes -keyout selfsigned.key -out selfsigned.crt -subj "/CN=$FQDN"  -addext "subjectAltName=DNS:localhost,DNS:$FQDN"

@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import os
+import json
+import sys
+import agent
+import subprocess
+import argparse
+import cert_helpers
+
+def main():
+    argp = argparse.ArgumentParser(
+        description="Notify applications when a TLS certificate is obtained/renewed via ACME protocol. " +
+        "If one or more certificates were obtained a \"certificate-changed\" event is notified.",
+    )
+    argp.add_argument('path', metavar='ACMEJSON-PATH', help="Path to Traefik acme.json file, e.g. acme/acme.json")
+    args = argp.parse_args()
+    curr_acme_path = args.path
+    prev_acme_path = curr_acme_path + '.acmejson-notify'
+    # Calculate symmetric difference between the new acme.json file and
+    # its previous version. The symmetric difference of two sets contains
+    # elements that are either in the first or in the second set, not
+    # both. The event is thus notified for both added and removed certificates.
+    changed_certs = parse_acme_certificates(curr_acme_path).symmetric_difference(parse_acme_certificates(prev_acme_path))
+    changed_dns_names = set()
+    for cert in changed_certs:
+        changed_dns_names.update(set(cert[0]))
+    if changed_dns_names:
+        print("The TLS certificate was changed for the following names:", ', '.join(changed_dns_names))
+        notify_certificate_changed_event(changed_dns_names)
+        subprocess.run(['cp', '-pv', curr_acme_path, prev_acme_path])
+
+def parse_acme_certificates(acme_path : str) -> set:
+    """Return a set of certificates extracted from acme.json file at
+    acme_path, represented by tuples of:
+
+    - DNS names (tuple of strings),
+    - certificate serial number (string),
+    """
+    certs = set()
+    for dcert in cert_helpers.list_internal_certificates(acmejson_path=acme_path, with_details=True):
+        certs.add((
+            tuple(dcert['traefik_names']),
+            dcert['serial'],
+        ))
+    return certs
+
+def notify_certificate_changed_event(changed_dns_names):
+    rdb = agent.redis_connect(privileged=True)
+    rdb.publish(f"{os.environ['AGENT_ID']}/event/certificate-changed", json.dumps({
+        "node_id": int(os.environ['NODE_ID']),
+        "module_id": os.environ['MODULE_ID'],
+        "names": list(changed_dns_names),
+    }))
+
+if __name__ == "__main__":
+    main()

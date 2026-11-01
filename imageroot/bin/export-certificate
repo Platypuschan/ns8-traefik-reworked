@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+#
+# The script parses a traefik acme.json file and search for
+# Let's Encrypt certificate.
+# If a certificate has been created or updated,
+# certificate and private keys are saved inside Redis in key
+# named module/<module_id>/certificate/<domain> and
+# the certificate-updated event is signaled.
+#
+
+import os
+import json
+import agent
+import os.path
+import sys
+import cert_helpers
+
+module_id = os.environ['MODULE_ID']
+node_id = os.environ['NODE_ID']
+path = sys.argv[1]
+
+try:
+    data = json.load(open(path))
+    certificates = data["acmeServer"]["Certificates"]
+    if certificates is None: # Certificate request is pending, skip silently
+        certificates = []
+except Exception as ex:
+    print(agent.SD_WARNING + f"ACME TLS certificates for Traefik were not found in {path}: {ex}", file=sys.stderr)
+    sys.exit(0)
+
+def process_certificates(certificates):
+    rdb = agent.redis_connect(privileged=True)
+    default_cert_names = cert_helpers.read_default_cert_names()
+    for info in certificates:
+        cur_cert_names = [info["domain"]["main"]] + info["domain"].get("sans", [])
+        if len(default_cert_names) > 0 and cur_cert_names[0] == default_cert_names[0] and cur_cert_names != default_cert_names:
+            print("[DEBUG] Ignoring certificate (main + sans):", cur_cert_names)
+            continue # ignore if certificate has SAN and is not the default one
+        for fqdn in cur_cert_names:
+            export_certificate(fqdn, info, rdb)
+
+def export_certificate(fqdn, info, rdb):
+    global module_id, node_id, path
+    rkey = f'module/{module_id}/certificate/{fqdn}'
+    cur_cert = rdb.hget(rkey, 'cert')
+    cur_key = rdb.hget(rkey, 'key')
+    custom = rdb.hget(rkey, 'custom')
+    # Skip if the certificate is custom
+    if not custom or custom != "true":
+        # save the certificate only if not exists or if has been changed
+        if (not cur_cert or cur_cert != info["certificate"]) or (not cur_key or cur_key != info["key"]):
+            print(f'Saving certificate and key to {rkey} - DEPRECATED! Modules must run the get-certificate command or invoke action module/{module_id}/get-certificate')
+            rdb.hset(rkey, mapping={"cert": info["certificate"], "key":  info["key"], "custom": "false"})
+            # signal the certificate-updated event
+            event_key = f'module/{module_id}/event/certificate-updated'
+            event = {"rkey": rkey, "node": node_id, "module": module_id, "domain": info["domain"], "custom": False}
+            rdb.publish(event_key, json.dumps(event))
+
+process_certificates(certificates)

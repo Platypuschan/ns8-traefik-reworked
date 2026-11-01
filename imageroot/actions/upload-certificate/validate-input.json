@@ -1,0 +1,27 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "upload-certificate input",
+    "$id": "http://schema.nethserver.org/traefik/upload-certificate-input.json",
+    "description": "Upload a certificate to be used by Traefik",
+    "examples": [
+        {
+            "certFile": "LS0tLS1CRUdJTiBDRVJUSUZJ...",
+            "keyFile": "LS0tLS1CRUdJTiBSU0EgU..."
+        }
+    ],
+    "type": "object",
+    "required": [
+        "certFile",
+        "keyFile"
+    ],
+    "properties": {
+        "certFile": {
+            "type": "string",
+            "description": "Base64 Encode of the certificate."
+        },
+        "keyFile": {
+            "type": "string",
+            "description": "Base64 Encode of the key file used to generate the certificate."
+        }
+    }
+}

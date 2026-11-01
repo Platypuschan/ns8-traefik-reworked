@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import os
+import agent
+import re
+
+agent.set_weight(os.path.basename(__file__), 0) # Validation step, no task progress at all
+
+# Try to parse the stdin as JSON.
+# If parsing fails, output everything to stderr
+data = json.load(sys.stdin)
+
+field_re = re.compile(r"^((?![()<>@,;:\\\"/[\]?={}])[!-~])+$")
+
+if "headers" in data:
+    req_headers= data["headers"].get('request',{})
+    res_headers= data["headers"].get('response',{})
+
+    for field_name in req_headers:
+        if field_re.match(field_name) is None:
+            agent.set_status('validation-failed')
+            json.dump([{'field':'headers ','parameter':'request','value': field_name,'error':'headers_name_format_is_not_valid'}], fp=sys.stdout)
+            sys.exit(3)
+
+    for field_name in res_headers:
+        if field_re.match(field_name) is None:
+            agent.set_status('validation-failed')
+            json.dump([{'field':'headers ','parameter':'response','value': field_name,'error':'headers_name_format_is_not_valid'}], fp=sys.stdout)
+            sys.exit(3)
+
+if data.get("forward_auth") and data["forward_auth"].get("auth_response_headers"):
+    for field_name in data["forward_auth"].get("auth_response_headers", {}):
+        if field_re.match(field_name) is None:
+            agent.set_status('validation-failed')
+            json.dump([{'field':'headers ','parameter':'auth_response_headers','value': field_name,'error':'headers_name_format_is_not_valid'}], fp=sys.stdout)
+            sys.exit(3)

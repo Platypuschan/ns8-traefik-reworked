@@ -1,0 +1,35 @@
+[Unit]
+Description=Traefik edge proxy
+Wants=certificate-exporter.path
+
+[Service]
+Environment=PODMAN_SYSTEMD_UNIT=%n
+EnvironmentFile=%E/state/environment
+Restart=always
+ExecStartPre=/bin/rm -f %t/traefik.pid %t/traefik.ctr-id configs/_validation*.yml
+ExecStart=/usr/bin/podman run \
+    --detach \
+    --conmon-pidfile=%t/traefik.pid \
+    --cidfile=%t/traefik.ctr-id \
+    --cgroups=no-conmon \
+    --network=host \
+    --replace --name=%N \
+    --env=PROXIES_DEPTH \
+    --volume=./acme:/etc/traefik/acme:z \
+    --volume=./traefik.yaml:/etc/traefik/traefik.yaml:z \
+    --volume=./selfsigned.crt:/etc/traefik/selfsigned.crt:z \
+    --volume=./selfsigned.key:/etc/traefik/selfsigned.key:z \
+    --volume=./configs:/etc/traefik/configs:z \
+    --volume=./custom_certificates:/etc/traefik/custom_certificates:z \
+    $PODMAN_RUN_OPTS \
+    ${TRAEFIK_IMAGE}
+ExecStartPost=-runagent write-hosts
+ExecStop=/usr/bin/podman stop --ignore --cidfile %t/traefik.ctr-id -t 15
+ExecStopPost=/usr/bin/podman rm --ignore -f --cidfile %t/traefik.ctr-id
+PIDFile=%t/traefik.pid
+Type=forking
+WorkingDirectory=%E/state
+SyslogIdentifier=%u
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e
+
+rm -rf state-backup
+mkdir -vp state-backup
+
+cp -pvT traefik.yaml state-backup/traefik.yaml
+cp -prvT configs state-backup/configs
+cp -prvT manual_flags state-backup/manual_flags
+cp -prvT custom_certificates state-backup/custom_certificates
+cp -prvT acme state-backup/acme

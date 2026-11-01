@@ -1,0 +1,207 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "get-route output",
+    "$id": "http://schema.nethserver.org/traefik/get-route-output.json",
+    "description": "Show the configuration of a  HTTP route",
+    "examples": [
+        {
+            "instance": "module1",
+            "url": "http://127.0.0.0:2000",
+            "host": "module.example.org",
+            "priority": 2,
+            "lets_encrypt": true,
+            "http2https": true,
+            "skip_cert_verify": true
+        },
+        {
+            "instance": "module2",
+            "url": "http://127.0.0.0:2000",
+            "host": "module.example.org",
+            "path": "/foo",
+            "priority": 3,
+            "lets_encrypt": true,
+            "http2https": true,
+            "strip_prefix": false,
+            "skip_cert_verify": true
+        },
+        {
+            "instance": "module3",
+            "url": "http://127.0.0.0:2000",
+            "path": "/foo",
+            "priority": 3,
+            "lets_encrypt": true,
+            "http2https": true,
+            "strip_prefix": false,
+            "skip_cert_verify": true
+        }
+    ],
+    "type": "object",
+    "additionalProperties": false,
+    "oneOf": [
+        {
+            "anyOf": [
+                {
+                    "required": [
+                        "host"
+                    ]
+                },
+                {
+                    "required": [
+                        "path"
+                    ]
+                }
+            ],
+            "required": [
+                "instance",
+                "url",
+                "priority",
+                "http2https"
+            ]
+        },
+        {
+            "properties": {},
+            "additionalProperties": false
+        }
+    ],
+    "dependencies": {
+        "host": {
+            "required": [
+                "lets_encrypt"
+            ]
+        },
+        "lets_encrypt": {
+            "required": [
+                "lets_encrypt"
+            ]
+        },
+        "slash_redirect": {
+            "required": [
+                "path"
+            ]
+        },
+        "strip_prefix": {
+            "required": [
+                "path"
+            ]
+        },
+        "path": {
+            "required": [
+                "strip_prefix"
+            ]
+        }
+    },
+    "properties": {
+        "instance": {
+            "type": "string",
+            "title": "Instance name",
+            "examples": [
+                "module1"
+            ],
+            "description": "The instance name, which is unique inside the cluster."
+        },
+        "priority": {
+            "type": "integer",
+            "description": "The Traefik router rule priority assigned to the HTTP route"
+        },
+        "url": {
+            "type": "string",
+            "format": "uri",
+            "title": "Backend URL",
+            "description": "The backend target URL."
+        },
+        "host": {
+            "type": "string",
+            "format": "hostname",
+            "title": "Virtualhost",
+            "description": "A fully qualified domain name as virtualhost."
+        },
+        "path": {
+            "type": "string",
+            "title": "Request path prefix",
+            "description": "A path prefix, the matching evaluation will be performed whit and without the trailing slash, eg /foo will match `/foo and `/foo/*, also `/foo/` will match /foo and /foo/*",
+            "examples": [
+                "/foo",
+                "/foo/"
+            ]
+        },
+        "lets_encrypt": {
+            "type": "boolean",
+            "title": "Let's Encrypt certificate",
+            "description": "Request a valid Let's Encrypt certificate."
+        },
+        "http2https": {
+            "type": "boolean",
+            "title": "HTTP to HTTPS redirection",
+            "description": "Redirect all the HTTP requests to HTTPS"
+        },
+        "slash_redirect": {
+            "type": "boolean",
+            "title": "Slash redirect",
+            "description": "Redirect to path with trailing slash"
+        },
+        "strip_prefix": {
+            "type": "boolean",
+            "title": "Strip prefix path",
+            "description": "Strip the path prefix from the request"
+        },
+        "skip_cert_verify": {
+            "type": "boolean",
+            "title": "Skip certificate verification",
+            "description": "Do not verify the backend's certificate"
+        },
+        "user_created": {
+            "type": "boolean",
+            "title": "User created route flag",
+            "description": "If true, the route is flagged as manually created by a user"
+        },
+        "ip_allowlist": {
+            "type":"array",
+            "description": "List of allowed client ip addresses, in CIDR format",
+            "items": {
+                "type":"string"
+            }
+        },
+        "headers": {
+            "type": "object",
+            "title": "Headers list",
+            "description": "Headers to add or remove from an HTTP's request or response",
+            "additionalProperties": false,
+            "properties": {
+                "request": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".*": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "response": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".*": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "forward_auth": {
+            "type": "object",
+            "title": "Forward Auth configuration",
+            "description": "If set enabled forwardAuth prop on traefik",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "format": "uri",
+                    "title": "The server address",
+                    "description": "The address option defines the authentication server address"
+                },
+                "skip_tls_verify": {
+                    "type": "boolean",
+                    "title": "Skip TLS verify",
+                    "description": "If insecureSkipVerify is true, the TLS connection to the authentication server accepts any certificate presented by the server regardless of the hostnames it covers"
+                }
+            }
+        }
+    }
+}

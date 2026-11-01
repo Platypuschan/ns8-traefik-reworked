@@ -1,0 +1,12 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "set-certificate output",
+    "$id": "http://schema.nethserver.org/traefik/set-certificate-output.json",
+    "type": "object",
+    "properties": {
+        "obtained": {
+            "description": "Const value for backward compatibility. It can be ignored.",
+            "const": true
+        }
+    }
+}

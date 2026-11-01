@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2024 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import os
+import json
+import agent
+import sys
+import subprocess
+from base64 import b64decode
+import re
+
+
+module_id = os.environ['MODULE_ID']
+node_id = os.environ['NODE_ID']
+
+data = json.load(sys.stdin)
+
+# read and decode the base64 certificate and key from json payload
+cert = b64decode(data["certFile"]).decode()
+key = b64decode(data["keyFile"]).decode()
+
+# read the common name from the certificate, in the same format used by the action validator
+result = subprocess.run(
+    ['openssl', 'x509', '-noout', '-subject', '-nameopt', 'multiline', '-nameopt', 'utf8'],
+    input=cert,
+    capture_output=True,
+    text=True
+)
+
+domain = {'main': re.search(r"^ *commonName *= ([^\n]+)$", result.stdout, flags=re.MULTILINE).group(1)}
+
+# save the certificate and key in redis
+rdb = agent.redis_connect(privileged=True)
+rkey = f'module/{module_id}/certificate/{domain["main"]}'
+rdb.hset(rkey, mapping={"cert": data["certFile"], "key": data["keyFile"], "custom": "true"})
+
+# signal the certificate-updated event
+event_key = f'module/{module_id}/event/certificate-updated'
+event = {"rkey": rkey, "node": node_id, "module": module_id, "domain": domain, "custom": True}
+rdb.publish(event_key, json.dumps(event))

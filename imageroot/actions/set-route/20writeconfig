@@ -150,6 +150,22 @@ if "headers" in data and data["headers"]:
     router_http["middlewares"].append(f'{data["instance"]}-headers')
     router_https["middlewares"].append(f'{data["instance"]}-headers')
 
+# Optional proof of TLS client key possession. Authorization remains the
+# backend's responsibility: RequestClientCert accepts self-signed certificates.
+# Every HTTPS router of a hostname MUST select the same options (TLS uses SNI,
+# not the HTTP path). One shared, identical option avoids per-path conflicts.
+# Strip inbound headers AFTER user-configured middleware, then set from TLS.
+if data.get('client_certificates'):
+    if not data.get('host') or not data.get('http2https'):
+        raise ValueError('client_certificates requires a host and HTTPS redirection')
+    router_https['tls']['options'] = 'ns8-client-certificates@file'
+    clear_name = f'{data["instance"]}-client-cert-clear'
+    pass_name = f'{data["instance"]}-client-cert-pass'
+    middlewares[clear_name] = {'headers': {'customRequestHeaders': {
+        'X-Forwarded-Tls-Client-Cert': '', 'X-Forwarded-Tls-Client-Cert-Info': ''}}}
+    middlewares[pass_name] = {'passTLSClientCert': {'pem': True}}
+    router_https['middlewares'].extend([clear_name, pass_name])
+
 # Enable or disable HTTP 2 HTTPS redirection
 if data.get("http2https"):
     router_http["middlewares"] = ["http2https-redirectscheme"]
@@ -168,6 +184,10 @@ config = {"http": {"services": services, "routers": routers}}
 # Add serversTransports if we need to not verify self signed certificates
 if 'skip_cert_verify' in data and data["skip_cert_verify"]:
     config["http"]["serversTransports"] =  serversTransports
+
+if data.get('client_certificates'):
+    config['tls'] = {'options': {'ns8-client-certificates': {
+        'minVersion': 'VersionTLS12', 'clientAuth': {'clientAuthType': 'RequestClientCert'}}}}
 
 if middlewares:
     config["http"]["middlewares"] = middlewares

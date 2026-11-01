@@ -64,6 +64,8 @@ def get_route(data, ignore_error = False):
         # Check if the certificate is retrieved automatically
         route['lets_encrypt'] = True if traefik_https_route['tls'].get("certResolver") else False
 
+        route['client_certificates'] = traefik_https_route['tls'].get('options') == 'ns8-client-certificates@file'
+
         # Strip @file suffix from middleware names
         for mid in traefik_http_route.get("middlewares",[]) + traefik_https_route.get("middlewares",[]):
             middlewares.append(mid[0:mid.index('@')])

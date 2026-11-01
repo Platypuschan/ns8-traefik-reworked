@@ -2,9 +2,9 @@
 
 set -e
 images=()
-repobase="${REPOBASE:-ghcr.io/nethserver}"
+repobase="${REPOBASE:-ghcr.io/platypuschan}"
 
-reponame="traefik"
+reponame="traefik-reworked"
 container=$(buildah from scratch)
 
 buildah add "${container}" imageroot /imageroot
@@ -12,6 +12,7 @@ buildah add "${container}" ui /ui
 buildah config --entrypoint=/ \
     --label="org.nethserver.images=docker.io/traefik:v3.7.16" \
     --label="org.nethserver.flags=core_module" \
+    --label="org.opencontainers.image.source=https://github.com/Platypuschan/ns8-traefik-reworked" \
     --label="org.nethserver.min-core=3.17.0-0" \
     "${container}"
 buildah commit "${container}" "${repobase}/${reponame}"

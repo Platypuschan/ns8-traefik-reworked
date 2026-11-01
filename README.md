@@ -1,5 +1,17 @@
 # Traefik
 
+> Reworked module, based on [NethServer/ns8-traefik](https://github.com/NethServer/ns8-traefik). It adds optional TLS client certificates, see `client_certificates` below. Everything else is unchanged upstream code.
+
+## Install on an existing node
+
+Traefik is a core module, so it is replaced in place:
+
+```sh
+api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/traefik-reworked:VERSION","instances":["traefik1"]}'
+```
+
+After this the instance source is this repository. Core updates skip it, so upstream Traefik updates arrive only through a new version here. To return to upstream, run the same command with `ghcr.io/nethserver/traefik:VERSION`, with `"force":true` if that version is lower. Disable certificate sign-in in the applications first.
+
 This module implements a proxy for web applications using [Traefik](https://doc.traefik.io/traefik/).
 
 The following table summarizes the available actions and the role(s)
@@ -44,6 +56,13 @@ If not otherwise stated, all parameters are optional:
   cluster.
 
 - `skip_cert_verify`: do not verify self signed certificate (boolean).
+
+- `client_certificates`: if `true`, request a TLS client certificate and
+  forward its PEM to the backend, after removing inbound certificate
+  headers. Requires `host` and `http2https`. All routes of a hostname must
+  use the same value, and the backend must authorize the certificate. The
+  action does not wait for the route, because Traefik drops the routers of
+  a hostname while their TLS options differ.
 
 - `url`: the backend target URL. Mandatory for route creation.
 

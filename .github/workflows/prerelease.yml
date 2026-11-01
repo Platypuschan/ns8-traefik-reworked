@@ -1,0 +1,94 @@
+name: Prepare prerelease
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: [VERSION]
+permissions:
+  contents: read
+concurrency:
+  group: prerelease-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.images.outputs.image }}
+      candidate: ${{ steps.images.outputs.candidate }}
+      version: ${{ steps.images.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y buildah skopeo
+      - name: Build the candidate image
+        id: images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          version="$(cat VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-reworked\.[0-9]+$ ]] || exit 64
+          base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          tag="candidate-${HEAD_SHA:0:12}"
+          printf '%s' "$GH_TOKEN" | buildah login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          REPOBASE="$base" ./build-images.sh
+          buildah push "$base/traefik-reworked" "docker://$base/traefik-reworked:$tag"
+          printf 'image=%s/traefik-reworked:%s\ncandidate=%s\nversion=%s\n' "$base" "$tag" "$tag" "$version" >> "$GITHUB_OUTPUT"
+  qemu:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian13
+            bootstrap: false
+          - distro: rocky9
+            bootstrap: true
+    permissions:
+      contents: read
+      statuses: write
+    uses: NethServer/ns8-github-actions/.github/workflows/test-on-qemu.yml@v1
+    with:
+      distro: ${{ matrix.distro }}
+      # CI-only signed official Rocky repositories while the NS mirror
+      # advertises missing BaseOS metadata; no installed module OS changes.
+      image_url: ${{ !matrix.bootstrap && needs.build.outputs.image || '' }}
+      setup_cluster: ${{ !matrix.bootstrap }}
+      coremodules: ${{ matrix.bootstrap && format('ghcr.io/nethserver/core:3.23.2 {0}', needs.build.outputs.image) || '' }}
+      repo_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      version_tag: ${{ needs.build.outputs.candidate }}
+      install_args: ghcr.io/nethserver/core:3.23.2
+      script: ${{ matrix.bootstrap && 'tests/bootstrap-rocky.sh' || '' }}
+      args: ${{ matrix.bootstrap && needs.build.outputs.image || '-v SCENARIO:update' }}
+  publish:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [build, qemu]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y skopeo
+      - name: Promote the tested digest and create the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          # Existing versions are immutable.
+          destination="${IMAGE%:*}:$VERSION"
+          error="$(mktemp)"
+          if skopeo inspect "docker://$destination" >/dev/null 2>"$error"; then
+            echo "Refusing to overwrite $destination" >&2; exit 1
+          fi
+          grep -qiE 'manifest unknown|name unknown' "$error" || { cat "$error" >&2; exit 1; }
+          digest="$(skopeo inspect "docker://$IMAGE" --format '{{.Digest}}')"
+          skopeo copy --preserve-digests "docker://${IMAGE%:*}@$digest" "docker://$destination"
+          gh release create "$VERSION" --target "$GITHUB_SHA" --prerelease --title "traefik-reworked $VERSION" --notes-file RELEASE_NOTES.md

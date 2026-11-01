@@ -202,6 +202,10 @@
                     "description": "If insecureSkipVerify is true, the TLS connection to the authentication server accepts any certificate presented by the server regardless of the hostnames it covers"
                 }
             }
+        },
+        "client_certificates": {
+            "type": "boolean",
+            "description": "Request TLS client certificates and forward the PEM after removing inbound certificate headers. The backend MUST authorize certificates independently. Requires host and http2https. All routes for the same hostname must use the same value."
         }
     }
 }

@@ -13,6 +13,12 @@ from get_route import get_route
 data = json.load(sys.stdin)
 retry = 0
 
+# A hostname changes its TLS options in two tasks. Traefik drops its routers
+# between them, so waiting here only prolongs that window. The caller checks
+# the readback of both routes.
+if 'client_certificates' in data:
+    sys.exit(0)
+
 while get_route(data).get('instance') != data['instance'] and retry <= 10:
     retry += 1
     time.sleep(1)

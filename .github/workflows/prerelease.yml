@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: [VERSION]
+    paths: [VERSION, .github/workflows/prerelease.yml]
 permissions:
   contents: read
 concurrency:
@@ -35,7 +35,7 @@ jobs:
           base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           tag="candidate-${HEAD_SHA:0:12}"
           printf '%s' "$GH_TOKEN" | buildah login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          REPOBASE="$base" ./build-images.sh
+          REPOBASE="$base" bash build-images.sh
           buildah push "$base/traefik-reworked" "docker://$base/traefik-reworked:$tag"
           printf 'image=%s/traefik-reworked:%s\ncandidate=%s\nversion=%s\n' "$base" "$tag" "$tag" "$version" >> "$GITHUB_OUTPUT"
   qemu:

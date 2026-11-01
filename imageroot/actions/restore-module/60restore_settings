@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import agent
+import json
+import sys
+import conf_helpers
+
+def main():
+    request = json.load(sys.stdin)
+    needs_restart = False
+    try:
+        proxies_depth = int(request['environment'].get("PROXIES_DEPTH", "0"))
+    except ValueError:
+        proxies_depth = 0
+    if proxies_depth > 0:
+        # Restore proxies configuration from backup
+        print("Restoring trusted proxies configuration...", file=sys.stderr)
+        restore_trusted_proxies(request)
+        agent.set_env("PROXIES_DEPTH", proxies_depth)
+        needs_restart = True
+    else:
+        print("Trusted proxies configuration was not found in the backup. Nothing to do.", file=sys.stderr)
+    if needs_restart:
+        agent.run_helper("systemctl", "--user", "restart", "traefik.service").check_returncode()
+
+def restore_trusted_proxies(request):
+    """Read trusted IPs from the backup and set them into Traefik static
+    config. Existing settings are overwritten."""
+    bakconf = conf_helpers.parse_yaml_config("state-backup/traefik.yaml")
+    try:
+        bakproxies = bakconf['entryPoints']['http']['forwardedHeaders']["trustedIPs"]
+    except KeyError:
+        bakproxies = []
+    if len(bakproxies) == 0:
+        return
+    curconf = conf_helpers.parse_yaml_config("traefik.yaml")
+    curconf['entryPoints']['http'].setdefault('forwardedHeaders', {"trustedIPs": []})
+    curconf['entryPoints']['https'].setdefault('forwardedHeaders', {"trustedIPs": []})
+    curconf['entryPoints']['http']['forwardedHeaders']["trustedIPs"] = bakproxies
+    curconf['entryPoints']['https']['forwardedHeaders']["trustedIPs"] = bakproxies
+    conf_helpers.write_yaml_config(curconf, "traefik.yaml")
+    print("Trusted proxies:", bakproxies, file=sys.stderr)
+
+if __name__ == "__main__":
+    main()

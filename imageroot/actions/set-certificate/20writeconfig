@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import os
+import cert_helpers
+import agent
+
+def main():
+    request = json.load(sys.stdin)
+    router_id = os.environ["AGENT_TASK_USER"].removeprefix('module/') or "custom"
+    confpath = f"configs/set-certificate-{router_id}.yml"
+    if request.get("lets_encrypt") is False:
+        remove_traefik_certificate_router(confpath)
+    else:
+        add_traefik_certificate_router(request, router_id, confpath)
+    json.dump({"obtained": True}, fp=sys.stdout) # for backward-compatibility
+
+def remove_traefik_certificate_router(confpath):
+    try:
+        oconf = cert_helpers.parse_yaml_config(confpath)
+    except FileNotFoundError:
+        return # Nothing to do
+    _, orouter = oconf["http"]["routers"].popitem()
+    fqdn = orouter["tls"]["domains"][0]["main"]
+    os.unlink(confpath)
+    cert_helpers.clear_certresolver_in_http_routes(for_names={fqdn})
+    cert_helpers.purge_acme_json_and_restart_traefik(purge_names={fqdn})
+
+def add_traefik_certificate_router(request, router_id, confpath):
+    task_id = os.environ["AGENT_TASK_ID"] or "000"
+    fqdn = request['fqdn']
+    obtained, acme_error = cert_helpers.request_new_certificate([fqdn], request.get("sync_timeout", 60))
+    if not obtained:
+        for errline in acme_error.split('\n'):
+            print(agent.SD_ERR + errline, file=sys.stderr)
+        agent.set_status('validation-failed')
+        json.dump([{'field':'fqdn', 'parameter':'fqdn', 'value':fqdn, 'error':'newcert_acme_error', 'details':acme_error}], fp=sys.stdout)
+        exit(3)
+    oconf = {
+        "http": {
+            "routers": {
+                f"{router_id}-set-certificate": {
+                    "rule": f"Host(`{fqdn}`) && PathPrefix(`/{router_id}-{task_id}/`)",
+                    "priority": 1,
+                    "service": "ping@internal",
+                    "entryPoints": ["https"],
+                    "tls": {
+                        "domains": [{"main": fqdn}],
+                        "certResolver": "acmeServer",
+                    },
+                }
+            }
+        }
+    }
+    cert_helpers.write_yaml_config(oconf, confpath)
+
+if __name__ == "__main__":
+    main()

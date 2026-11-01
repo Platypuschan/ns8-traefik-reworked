@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+#
+# Create a virtual host configuration
+# Input example:
+#  {"instance": "module1", "url": "http://127.0.0.0:2000", "path": "/foo", "http2https": true}
+#
+
+import json
+import sys
+import os
+import yaml
+import copy
+import agent
+import cert_helpers
+from get_route import get_route
+
+# Try to parse the stdin as JSON.
+# If parsing fails, output everything to stderr
+request = json.load(sys.stdin)
+data = get_route({"instance": request["instance"]})
+original_data = data.copy()
+data.update(request)
+
+agent_id = os.getenv("AGENT_ID", "")
+if not agent_id:
+    raise Exception("AGENT_ID not found inside the environemnt")
+
+path = None
+path_prefix = None
+middlewares = {}
+services = {}
+routers = {}
+router_http = {}
+router_https = {}
+serversTransports={}
+
+if not 'url' in data:
+    agent.set_status('validation-failed')
+    json.dump([{'field':'url', 'parameter':'url', 'value': '', 'error':'missing_url_argument'}], fp=sys.stdout)
+    sys.exit(4)
+
+# Setup HTTP ans HTTPS routers
+services[data["instance"]] = { "loadBalancer" : { "servers": [{"url": data["url"]}] } }
+# Setup serversTransports if we need to not verify self signed certificates
+if 'skip_cert_verify' in data and data["skip_cert_verify"]:
+    serversTransports[data["instance"]] =  {"insecureSkipVerify": True}
+    services[data["instance"]]['loadBalancer']["serversTransport"] = data["instance"]
+
+# Remove trailing slash if present
+if data.get("path") is not None:
+    if data["path"] != "/":
+        path = data["path"].rstrip("/")
+        path_prefix = path + "/"
+    else:
+        path_prefix = path = "/"
+
+if data.get("host") is not None and data.get("path") is not None:
+    route = { "rule" :  f'Host(`{data["host"].lower()}`) && (Path(`{path}`) || PathPrefix(`{path_prefix}`))', "priority": data.get('priority', 3) }
+elif data.get("host") is not None:
+    route = { "rule":  f'Host(`{data["host"].lower()}`)', "priority": data.get('priority', 2)}
+elif data.get("path") is not None:
+    route = { "rule": f'Path(`{path}`) || PathPrefix(`{path_prefix}`)', "priority": data.get('priority', 1)}
+else:
+    agent.set_status('validation-failed')
+    json.dump([{'field':'path', 'parameter':'path', 'value': '', 'error':'missing_path_argument'}], fp=sys.stdout)
+    sys.exit(4)
+
+# Setup routers
+route["service"] = data["instance"]
+route["middlewares"] = []
+router_http = copy.deepcopy(route)
+router_http['entryPoints'] = ["http"]
+router_https = copy.deepcopy(route)
+router_https['entryPoints'] = ["https"]
+router_https["tls"] = {}
+#router_https = route_s
+if data.get("host") is not None:
+    router_https["tls"]["domains"] = [{"main": data["host"].lower()}]
+    # Enable or disable Let's Encrypt certificate
+    if data.get("lets_encrypt") is True:
+        router_https["tls"]["certResolver"] = "acmeServer"
+
+# IP addresses allowed to use the router
+if data.get('ip_allowlist', []) != []:
+    middlewares[f'{data["instance"]}-ipallowlist'] = {
+        "ipAllowList": {
+            "sourceRange": data['ip_allowlist'],
+            # If X-Forwarded-For header is present skip PROXIES_DEPTH
+            # items to extrapolate the Client IP. See set-trusted-proxies
+            # action.
+            "ipStrategy": {
+                "depth": '{{ env "PROXIES_DEPTH" | default "0"}}',
+            }
+        },
+    }
+    router_http["middlewares"].append(f'{data["instance"]}-ipallowlist')
+    router_https["middlewares"].append(f'{data["instance"]}-ipallowlist')
+
+# If trailing slash is missing, fix it and redirect
+if path and data.get('slash_redirect'):
+    middlewares[f'{data["instance"]}-slashredirect'] = {
+        "redirectRegex": {
+            "regex": f"^.*{path}$",
+            "replacement": path + "/",
+            "permanent": True,
+        },
+    }
+    router_http["middlewares"].append(f'{data["instance"]}-slashredirect')
+    router_https["middlewares"].append(f'{data["instance"]}-slashredirect')
+
+# Strip the path from the request
+if path and data.get("strip_prefix"):
+    middlewares[f'{data["instance"]}-stripprefix'] = { "stripPrefix": { "prefixes": path } }
+    router_http["middlewares"].append(f'{data["instance"]}-stripprefix')
+    router_https["middlewares"].append(f'{data["instance"]}-stripprefix')
+
+# Mark route as user_created
+if data.get('user_created') is not None and data["user_created"] is True:
+    # Create flag
+    os.makedirs("manual_flags", exist_ok=True)
+    with open(f'manual_flags/{data["instance"]}', 'w') as fpm:
+        pass
+
+# Setup forward route
+if data.get("forward_auth"):
+    middlewares[f'{data["instance"]}-auth'] = { "forwardAuth": {"address": data["forward_auth"]["address"], "tls": { "insecureSkipVerify": data["forward_auth"].get("skip_tls_verify", False) }}}
+    if data["forward_auth"].get("auth_response_headers"):
+        middlewares[f'{data["instance"]}-auth']["forwardAuth"]["authResponseHeaders"] = data["forward_auth"]["auth_response_headers"]
+    else:
+        middlewares[f'{data["instance"]}-auth']["forwardAuth"].pop('authResponseHeaders', None)
+    router_http["middlewares"].append(f'{data["instance"]}-auth')
+    router_https["middlewares"].append(f'{data["instance"]}-auth')
+
+# Write headers configuration
+if "headers" in data and data["headers"]:
+    headers = { 'headers': {} }
+    if ("request" in data["headers"] and data["headers"]["request"]):
+        headers['headers']['customRequestHeaders'] = data['headers']['request']
+    if ("response" in data["headers"] and data["headers"]["response"]):
+        headers['headers']['customResponseHeaders'] = data['headers']['response']
+    if headers['headers']:
+        middlewares[f'{data["instance"]}-headers'] = headers
+
+    router_http["middlewares"].append(f'{data["instance"]}-headers')
+    router_https["middlewares"].append(f'{data["instance"]}-headers')
+
+# Optional proof of TLS client key possession. Authorization remains the
+# backend's responsibility: RequestClientCert accepts self-signed certificates.
+# Every HTTPS router of a hostname MUST select the same options (TLS uses SNI,
+# not the HTTP path). One shared, identical option avoids per-path conflicts.
+# Strip inbound headers AFTER user-configured middleware, then set from TLS.
+if data.get('client_certificates'):
+    if not data.get('host') or not data.get('http2https'):
+        raise ValueError('client_certificates requires a host and HTTPS redirection')
+    router_https['tls']['options'] = 'ns8-client-certificates@file'
+    clear_name = f'{data["instance"]}-client-cert-clear'
+    pass_name = f'{data["instance"]}-client-cert-pass'
+    middlewares[clear_name] = {'headers': {'customRequestHeaders': {
+        'X-Forwarded-Tls-Client-Cert': '', 'X-Forwarded-Tls-Client-Cert-Info': ''}}}
+    middlewares[pass_name] = {'passTLSClientCert': {'pem': True}}
+    router_https['middlewares'].extend([clear_name, pass_name])
+
+# Enable or disable HTTP 2 HTTPS redirection
+if data.get("http2https"):
+    router_http["middlewares"] = ["http2https-redirectscheme"]
+
+# Cleanup middleware pointers
+if not router_http["middlewares"]:
+    del(router_http["middlewares"])
+if not router_https["middlewares"]:
+    del(router_https["middlewares"])
+
+# Write the configuration
+routers[f'{data["instance"]}-http'] = router_http
+routers[f'{data["instance"]}-https'] = router_https
+config = {"http": {"services": services, "routers": routers}}
+
+# Add serversTransports if we need to not verify self signed certificates
+if 'skip_cert_verify' in data and data["skip_cert_verify"]:
+    config["http"]["serversTransports"] =  serversTransports
+
+if data.get('client_certificates'):
+    config['tls'] = {'options': {'ns8-client-certificates': {
+        'minVersion': 'VersionTLS12', 'clientAuth': {'clientAuthType': 'RequestClientCert'}}}}
+
+if middlewares:
+    config["http"]["middlewares"] = middlewares
+
+with open(f'configs/{data["instance"]}.yml', 'w') as fp:
+    fp.write(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True))
+
+changed_names = set()
+# If cleanup is requested, remove the original Host from acme.json:
+if (request.get("lets_encrypt_cleanup") and
+    original_data.get("host") and
+    original_data.get("lets_encrypt") == True and
+    request.get("lets_encrypt") == False):
+    # Propagate the LE switch off to routes with the same Host:
+    cert_helpers.clear_certresolver_in_http_routes(for_names={original_data["host"]})
+    # Traefik restarts only when the original Host exists in acme.json:
+    changed_names = cert_helpers.purge_acme_json_and_restart_traefik(purge_names={original_data["host"]})
+
+if not changed_names:
+    # Traefik was not restarted: notify hosts-changed event here:
+    cert_helpers.update_redis_hosts_key_and_notify_event()

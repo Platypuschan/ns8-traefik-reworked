@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import os
+import cert_helpers
+import glob
+import base64
+import itertools
+
+def main():
+    request = json.load(sys.stdin)
+    fqdn = request['fqdn']
+    default_cert_names = set(cert_helpers.read_default_cert_names())
+    try:
+        wildcard = '*.' + fqdn.split(".", 1)[1]
+    except IndexError:
+        wildcard = None
+    certmatches = [] # list of certificates that match fqdn
+    for ctype, score, main, bcert, bkey, names in itertools.chain(
+        custom_certs_iterator(), # base score 20
+        acme_certs_iterator(), # base score 10
+    ):
+        scert = base64.b64encode(bcert).decode('utf-8')
+        skey = base64.b64encode(bkey).decode('utf-8')
+        if wildcard and wildcard in names:
+            # +5 points if fqdn matches a wildcard name
+            certmatches.append((scert, skey, ctype, main, score + 5))
+        elif fqdn in names and ctype == 'internal' and default_cert_names == names:
+            # +2 points if fqdn matches the default acme.json certificate
+            certmatches.append((scert, skey, ctype, main, score + 2))
+        elif fqdn in names:
+            # base score if fqdn matches main or sans
+            certmatches.append((scert, skey, ctype, main, score))
+
+    if certmatches:
+        # Sort matches by score and convert in output format
+        obtained = True
+        certmatches.sort(key=lambda c: c[4], reverse=True) # use score to sort items
+        ctype = certmatches[0][2]
+        certificates = [{"cert": c[0], "key": c[1]} for c in certmatches]
+    else:
+        # No match found, fall back to selfsigned certificate
+        obtained = False
+        ctype = "selfsigned"
+        scert = base64.b64encode(open("selfsigned.crt", "rb",).read()).decode('utf-8')
+        skey = base64.b64encode(open("selfsigned.key", "rb").read()).decode('utf-8')
+        certificates = [{"cert": scert, "key": skey}]
+
+    lets_encrypt = fqdn in cert_helpers.read_host_names_of_traefik_routers()
+    response = {
+        "fqdn": fqdn,
+        "type": ctype,
+        "obtained": obtained,
+        "certificates": certificates,
+        "lets_encrypt": lets_encrypt,
+    }
+    json.dump(response, fp=sys.stdout)
+
+def custom_certs_iterator():
+    for cert_path in glob.glob("custom_certificates/*.crt"):
+        main = cert_path.removeprefix("custom_certificates/").removesuffix(".crt")
+        with open(cert_path, 'rb') as f:
+            bcert = f.read()
+        with open(f"custom_certificates/{main}.key", "rb") as f:
+            bkey = f.read()
+        names = cert_helpers.extract_certified_names(bcert)
+        yield 'custom', 20, main, bcert, bkey, names
+
+def acme_certs_iterator():
+    try:
+        with open('acme/acme.json', 'r') as fp:
+            acmejson = json.load(fp)
+        for ocert in acmejson['acmeServer']["Certificates"] or []:
+            bcert = base64.b64decode(ocert["certificate"])
+            bkey = base64.b64decode(ocert["key"])
+            names = cert_helpers.extract_certified_names(bcert)
+            yield 'internal', 10, ocert["domain"]["main"], bcert, bkey, names
+    except (FileNotFoundError, KeyError, json.JSONDecodeError):
+        pass
+
+if __name__ == "__main__":
+    main()

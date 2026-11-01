@@ -1,0 +1,51 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e
+exec 1>&2
+
+[[ -f "configs/cluster-admin.yml" ]] && exit 0 # Nothing to do
+
+echo 'Creating HTTP route for cluster-admin...'
+cat >"configs/cluster-admin.yml" <<'EOF'
+http:
+  services:
+    cluster-admin:
+      loadBalancer:
+        servers:
+        - url: http://127.0.0.1:9311
+  routers:
+    cluster-admin-http:
+      rule: Path(`/cluster-admin`) || PathPrefix(`/cluster-admin/`)
+      priority: 100000
+      service: cluster-admin
+      middlewares:
+      - http2https-redirectscheme
+      entryPoints:
+      - http
+    cluster-admin-https:
+      rule: Path(`/cluster-admin`) || PathPrefix(`/cluster-admin/`)
+      priority: 100000
+      service: cluster-admin
+      middlewares:
+      - cluster-admin-slashredirect
+      - cluster-admin-stripprefix
+      entryPoints:
+      - https
+      tls: {}
+  middlewares:
+    cluster-admin-slashredirect:
+      redirectRegex:
+        regex: ^.*/cluster-admin$
+        replacement: /cluster-admin/
+        permanent: true
+    cluster-admin-stripprefix:
+      stripPrefix:
+        prefixes: /cluster-admin
+EOF
+
+rm -vf "configs/_api_server.yml"

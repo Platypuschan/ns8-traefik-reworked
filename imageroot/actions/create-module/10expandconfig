@@ -1,0 +1,63 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e
+
+# Redirect any output to the journal (stderr)
+exec 1>&2
+
+cat >traefik.yaml <<EOF 
+defaultEntryPoints:
+  - http
+  - https
+
+file: {}
+
+log:
+  level: INFO
+  noColor: true
+
+accessLog: {}
+
+entryPoints:
+  http:
+   address: ":80"
+  https:
+   address: ":443"
+  metrics:
+   address: ":8082"
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+
+providers:
+  file:
+    directory: "/etc/traefik/configs"
+
+tls:
+  certResolver: acmeServer
+  options: {}
+
+certificatesResolvers:
+  acmeServer:
+    acme:
+      email: null
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+      storage: /etc/traefik/acme/acme.json
+      httpChallenge:
+        entryPoint: https
+      tlsChallenge: {}
+
+ping:
+  manualRouting: true
+
+api: {}
+
+core:
+  defaultRuleSyntax: v3
+EOF

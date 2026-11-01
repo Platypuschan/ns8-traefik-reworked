@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+# Count routes and certificates
+
+import json
+import os
+import sys
+import urllib.request
+from get_route import get_route
+import cert_helpers
+import re
+import agent
+import agent.facts
+import glob
+
+rdb = agent.redis_connect(use_replica=True)
+anon_enforcing = not agent.facts.has_subscription(rdb)
+agent.facts.init_pseudonymization(anon_enforcing, rdb)
+
+api_path = os.environ["API_PATH"]
+
+# Get the list of routers keys with pagination support
+try:
+    traefik_routes = []
+    page = 1
+    base_url = 'http://127.0.0.1/'
+    api_endpoint = f'{api_path}/api/http/routers'
+    url = urllib.parse.urljoin(base_url, api_endpoint)
+    while True:
+        params = urllib.parse.urlencode({'page': page, 'per_page': 100})
+        with urllib.request.urlopen(f"{url}?{params}") as res:
+            page_routes = json.load(res)
+            traefik_routes.extend(page_routes)
+
+            # Check if there are more pages
+            if ('X-Next-Page' not in res.headers or
+                not res.headers['X-Next-Page'] or
+                int(res.headers['X-Next-Page']) <= page):
+                break
+            else:
+                page = int(res.headers['X-Next-Page'])
+except urllib.error.URLError as e:
+    raise Exception(f'Error reaching traefik daemon: {e.reason}')
+
+info = {"custom_path_routes": 0, "custom_host_routes": 0, "custom_certificates": 0, "acme_manual_certificates": 0, "acme_auto_certificates": 0, "acme_failed_certificates": 0}
+
+seen_host_names = set()
+for route in traefik_routes:
+    # List routes
+    if route['name'].endswith('-https@file'):
+        route['name'] = route['name'].removesuffix('-https@file')
+        if route == "ApiServer":
+            continue
+        r = get_route({'instance': route['name']})
+        if r.get('user_created', False):
+            if r.get('path'):
+                info["custom_path_routes"] += 1
+            if r.get('host'):
+                info["custom_host_routes"] += 1
+                if not r['host'] in seen_host_names:
+                    seen_host_names.add(r['host'])
+                    if not cert_helpers.has_acmejson_name(r['host']):
+                        info["acme_failed_certificates"] += 1
+
+        # Number of ACME certificates requested by HTTP routes
+        if r.get('lets_encrypt'):
+            info["acme_auto_certificates"] += 1
+
+# Number of DNS names added to the default certificate
+info["acme_manual_certificates"] = len(cert_helpers.read_default_cert_names())
+
+# Retrieve custom certificate
+info["custom_certificates"] = len(cert_helpers.read_custom_cert_names())
+
+def get_name_module_map():
+    """Build a map name-module_id to associate modules with customers."""
+    rdb = agent.redis_connect(use_replica=True)
+    # Generate regex patterns that match a module ID as a substring
+    module_patterns = {}
+    for mid in set(rdb.hkeys("cluster/module_node")):
+        pattern = re.compile('(?<![A-Za-z0-9])' + re.escape(mid) + '(?![A-Za-z0-9])', re.IGNORECASE)
+        module_patterns[mid] = pattern
+    def extract_module_id(router_name):
+        router_name = router_name.lower()
+        for k, p in module_patterns.items():
+            if p.search(router_name):
+                return k
+        return None
+
+    host_pattern = re.compile(r'Host\(`(.*?)`\)', re.IGNORECASE)
+    results = {}
+    for cfgpath in glob.glob("configs/*.yml"):
+        if cfgpath.startswith("configs/_"):
+            continue # skip builtin files
+        ocfg = cert_helpers.parse_yaml_config(cfgpath)
+        for rkey, orouter in ocfg.get('http', {}).get('routers', {}).items():
+            module_id = extract_module_id(rkey)
+            if not module_id:
+                continue
+            rule_hosts = re.findall(host_pattern, orouter['rule'])
+            for name in rule_hosts:
+                hkey = agent.facts.pseudo_domain(name)
+                if rkey.endswith("-set-certificate"):
+                    # Low-priority to nethvoice-proxy and mail
+                    results.setdefault(hkey, module_id)
+                else:
+                    # High-priority to webapps with HTTP routes
+                    results[hkey] = module_id
+    return results
+
+try:
+    info["name_module_map"] = get_name_module_map()
+except Exception as ex:
+    print("get-facts error:", ex, file=sys.stderr)
+    info["name_module_map"] = {}
+
+json.dump(info, fp=sys.stdout)

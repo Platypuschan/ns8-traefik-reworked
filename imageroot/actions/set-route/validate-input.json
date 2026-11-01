@@ -1,0 +1,253 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "set-route input",
+    "$id": "http://schema.nethserver.org/traefik/set-route-input.json",
+    "description": "Reserve a HTTP route",
+    "examples": [
+        {
+            "instance": "module1",
+            "url": "http://127.0.0.0:2000",
+            "host": "module.example.org",
+            "lets_encrypt": true,
+            "http2https": true
+        },
+        {
+            "instance": "module1",
+            "url": "http://127.0.0.0:2000",
+            "host": "module.example.org",
+            "path": null,
+            "lets_encrypt": true,
+            "http2https": true
+        },
+        {
+            "instance": "module2",
+            "url": "http://127.0.0.0:2000",
+            "host": "module.example.org",
+            "path": "/foo",
+            "lets_encrypt": true,
+            "http2https": true
+        },
+        {
+            "instance": "module3",
+            "url": "http://127.0.0.0:2000",
+            "path": "/foo",
+            "lets_encrypt": true,
+            "http2https": true
+        },
+        {
+            "instance": "module3",
+            "url": "http://127.0.0.0:2000",
+            "path": "/foo",
+            "host": null,
+            "lets_encrypt": true,
+            "http2https": true
+        },
+        {
+            "instance": "wants-slash",
+            "url": "http://127.0.0.0:9311",
+            "path": "/foo",
+            "lets_encrypt": false,
+            "http2https": true,
+            "slash_redirect": true
+        },
+        {
+            "instance": "module3",
+            "url": "http://127.0.0.0:2000",
+            "path": "/foo",
+            "lets_encrypt": true,
+            "http2https": true,
+            "ip_allowlist": [
+                "192.168.13.0/24",
+                "10.12.21.3"
+            ]
+        },
+        {
+            "instance": "module1",
+            "url": "http://127.0.0.0:2000",
+            "host": "module.example.org",
+            "lets_encrypt": true,
+            "http2https": true,
+            "forward_auth": {
+                "address": "http://127.0.0.1:9311/module/mod1/http-basic/action-fake",
+                "skip_tls_verify": true,
+                "auth_response_headers": [
+                    "X-Auth-User"
+                ]
+            }
+        }
+    ],
+    "type": "object",
+    "required": [
+        "instance"
+    ],
+    "properties": {
+        "instance": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_\\.-]+$",
+            "title": "Instance name",
+            "examples": [
+                "module1"
+            ],
+            "description": "The instance name, which is unique inside the cluster."
+        },
+        "url": {
+            "type": "string",
+            "format": "uri",
+            "title": "Backend URL",
+            "description": "The backend target URL."
+        },
+        "host": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "hostname",
+            "pattern": "\\.",
+            "title": "Virtualhost",
+            "description": "A fully qualified domain name as virtualhost. NULL clears the current value."
+        },
+        "path": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^/.*$",
+            "title": "Request path prefix",
+            "description": "A path prefix, the matching evaluation will be performed whit and without the trailing slash, eg /foo will match `/foo and `/foo/*, also `/foo/` will match /foo and /foo/*.  NULL clears the current value.",
+            "examples": [
+                "/foo",
+                "/foo/"
+            ]
+        },
+        "priority": {
+            "type": "integer",
+            "description": "Override the default priority assignment (1,2,3), based on host and path",
+            "minimum": 0
+        },
+        "lets_encrypt": {
+            "type": "boolean",
+            "title": "Let's Encrypt certificate",
+            "description": "Request a valid Let's Encrypt certificate."
+        },
+        "lets_encrypt_check": {
+            "type": "boolean",
+            "description": "When set true, return a validation error if a Let's Encrypt certificate is not immediately obtained",
+            "default": false
+        },
+        "lets_encrypt_cleanup": {
+            "type": "boolean",
+            "description": "If true and lets_encrypt attribute is false, the Let's Encrypt certificate is removed and Traefik is restarted if needed.",
+            "default": false
+        },
+        "http2https": {
+            "type": "boolean",
+            "title": "HTTP to HTTPS redirection",
+            "description": "Redirect all the HTTP requests to HTTPS"
+        },
+        "strip_prefix": {
+            "type": "boolean",
+            "title": "Strip prefix path",
+            "description": "Strip the path prefix from the request"
+        },
+        "slash_redirect": {
+            "type": "boolean",
+            "title": "Slash redirect",
+            "description": "Redirect to path with trailing slash"
+        },
+        "skip_cert_verify": {
+            "type": "boolean",
+            "title": "Skip certificate verification",
+            "description": "Do not verify the backend's certificate"
+        },
+        "user_created": {
+            "type": "boolean",
+            "title": "User created route flag",
+            "description": "If true, the route is flagged as manually created by a user"
+        },
+        "ip_allowlist": {
+            "type": "array",
+            "description": "List of allowed client ip addresses, in CIDR format",
+            "items": {
+                "type": "string"
+            }
+        },
+        "headers": {
+            "type": "object",
+            "title": "Headers list",
+            "description": "Headers to add or remove from an HTTP's request or response",
+            "additionalProperties": false,
+            "examples": [
+                {
+                    "headers": {
+                        "request": {
+                            "X-foo-add": "foo",
+                            "X-bar-remove": ""
+                        },
+                        "response": {
+                            "X-bar-add": "bar",
+                            "X-foo-remove": ""
+                        }
+                    }
+                }
+            ],
+            "properties": {
+                "request": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "patternProperties": {
+                        "^.+$": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "response": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "patternProperties": {
+                        "^.+$": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "forward_auth": {
+            "type": [
+                "object"
+            ],
+            "dependencies": {
+                "skip_tls_verify": [
+                    "address"
+                ]
+            },
+            "title": "Forward Auth configuration",
+            "description": "If set enabled forwardAuth prop on traefik. If null",
+            "additionalProperties": false,
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "format": "uri",
+                    "title": "The server address",
+                    "description": "The address option defines the authentication server address"
+                },
+                "skip_tls_verify": {
+                    "type": "boolean",
+                    "title": "Skip TLS verify",
+                    "description": "If insecureSkipVerify is true, the TLS connection to the authentication server accepts any certificate presented by the server regardless of the hostnames it covers"
+                },
+                "auth_response_headers": {
+                    "type": "array",
+                    "title": "Auth response headers",
+                    "description": "A list of headers to be copied from backend response to the client",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client_certificates": {
+            "type": "boolean",
+            "description": "Request TLS client certificates and forward the PEM after removing inbound certificate headers. The backend MUST authorize certificates independently. Requires host and http2https. All routes for the same hostname must use the same value."
+        }
+    }
+}

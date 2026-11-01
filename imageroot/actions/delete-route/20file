@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2022 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import cert_helpers
+from pathlib import Path
+from get_route import get_route
+
+# Try to parse the stdin as JSON.
+# If parsing fails, output everything to stderr
+data = json.load(sys.stdin)
+
+if data.get("lets_encrypt_cleanup"):
+    oroute = get_route({"instance": data["instance"]})
+    route_host = oroute.get("host")
+else:
+    route_host = None
+
+# Remove route configuration
+p = Path(f'configs/{data["instance"]}.yml')
+p.unlink(missing_ok=True)
+
+# Remove manual flag
+pf = Path(f'manual_flags/{data["instance"]}')
+pf.unlink(missing_ok=True)
+
+changed_names = set()
+# Purge certificate, if it matches the route Host
+if route_host:
+    cert_helpers.clear_certresolver_in_http_routes(for_names={route_host})
+    changed_names = cert_helpers.purge_acme_json_and_restart_traefik(purge_names={route_host})
+if not changed_names:
+    # Traefik was not restarted: notify hosts-changed event here:
+    cert_helpers.update_redis_hosts_key_and_notify_event()

@@ -1,0 +1,80 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e
+
+# Redirect any output to the journal (stderr)
+exec 1>&2
+
+#
+# Create file provider configurations directory
+#
+mkdir -p configs
+
+#
+# Prepare middleware for HTTP to HTTPS redirect
+#
+cat <<EOF > configs/_http2https.yml
+http:
+  middlewares:
+    http2https-redirectscheme:
+      redirectScheme:
+        permanent: true
+        scheme: https
+EOF
+
+#
+# Configure default self-signed certificate
+#
+cat <<EOF > configs/_default_cert.yml
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/selfsigned.crt
+        keyFile: /etc/traefik/selfsigned.key
+EOF
+
+#
+# Setup APIs endpoint
+#
+API_PATH="$(uuidgen)"
+printf "API_PATH=%s\n" "${API_PATH}" >> environment
+cat <<EOF > configs/_api.yml
+http:
+  middlewares:
+    ApisEndpointMw0:
+      IPAllowList:
+        sourceRange:
+        - 127.0.0.1
+    ApisEndpointMw1:
+      stripPrefix:
+        prefixes:
+        - /${API_PATH}
+  routers:
+    ApisEndpointHttp:
+      entrypoints:
+      - http
+      middlewares:
+      - ApisEndpointMw1
+      - ApisEndpointMw0
+      priority: 100000
+      rule: PathPrefix(\`/${API_PATH}/api\`)
+      service: api@internal
+EOF
+
+# Create uploaded certificates folder
+mkdir -p custom_certificates
+
+# Create acme storage folder
+mkdir -p acme
+
+# Keep track of HTTP routes created by users
+mkdir -p manual_flags
+
+# Enable and start the services
+systemctl --user enable --now traefik.service

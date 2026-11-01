@@ -1,0 +1,52 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "get-acme-server output",
+    "$id": "http://schema.nethserver.org/traefik/get-acme-eserver-output.json",
+    "description": "Get ACME configuration",
+    "examples": [
+        {
+            "challenge": "HTTP-01",
+            "email": "certadmin@example.org",
+            "url": "https://acme-staging-v02.api.letsencrypt.org/directory"
+        },
+        {
+            "url": "https://acme-staging-v02.api.letsencrypt.org/directory"
+        }
+    ],
+    "type": "object",
+    "required": [
+        "challenge",
+        "email",
+        "url"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "email": {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Address for expiration notifications"
+                },
+                {
+                    "const": ""
+                }
+            ]
+        },
+        "challenge": {
+            "type": "string",
+            "enum": [
+                "TLS-ALPN-01",
+                "HTTP-01"
+            ]
+        },
+        "url": {
+            "type": "string",
+            "format": "uri",
+            "title": "Url of the ACME server",
+            "examples": [
+                "https://acme-staging-v02.api.letsencrypt.org/directory"
+            ]
+        }
+    }
+}

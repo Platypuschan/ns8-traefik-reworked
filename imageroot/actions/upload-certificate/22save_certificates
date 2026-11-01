@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e
+
+ensure_final_newline() {
+  local file="$1"
+  # Get last character
+  last_char=$(tail -c1 "$file")
+  # Check if last char is not a newline
+  if [ "$last_char" != "" ] && [ "$last_char" != $'\n' ]; then
+    printf '\n' >> "$file"
+  fi
+}
+
+CERT_FILE=uploaded_cert
+KEY_FILE=uploaded_key
+
+# delete files after exit
+trap 'rm -f $KEY_FILE $CERT_FILE' EXIT
+
+# extract common name
+cn_name=$(openssl x509 -noout -subject -nameopt=multiline -in $CERT_FILE | sed -n 's/ *commonName *= //p')
+
+# ensure that the custom cert/key ends with a trailing line
+ensure_final_newline "$CERT_FILE"
+ensure_final_newline "$KEY_FILE"
+
+# copy certificate in traefik shared directory
+cp $KEY_FILE "custom_certificates/$cn_name.key"
+cp $CERT_FILE "custom_certificates/$cn_name.crt"
+
+# write configuration file for certificate
+cat >"configs/certificate_${cn_name}.yml" <<EOF
+tls:
+  certificates:
+    - certFile: /etc/traefik/custom_certificates/$cn_name.crt
+      keyFile: /etc/traefik/custom_certificates/$cn_name.key
+EOF

@@ -1,0 +1,20 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "list-routes input",
+    "$id": "http://schema.nethserver.org/traefik/list-routes-output.json",
+    "description": "Get a list of configured routes",
+    "examples": [
+        {"expand_list": true}
+    ],
+    "oneOf": [{
+	    "type": "object",
+	    "additionalProperties": false,
+	    "required": ["expand_list"],
+	    "properties": {
+		    "expand_list": {
+			    "type":"boolean",
+			    "title": "Expand the route on the list"
+		    }
+	    }
+    },{"type":"null"}]
+}

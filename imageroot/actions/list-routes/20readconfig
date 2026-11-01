@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import os
+import agent
+import sys
+import urllib.request
+import urllib.parse
+from get_route import get_route
+import cert_helpers
+
+internal_names = set()
+
+for ocert in cert_helpers.list_internal_certificates(with_details=False):
+    internal_names.update(set(ocert['traefik_names']))
+
+def decorate_cert_attributes(oroute):
+    """Add certficate status to the route object passed as argument."""
+    global internal_names
+    if oroute.get('lets_encrypt') and oroute.get('host'):
+        if oroute['host'].lower() not in internal_names:
+            # The route host has no corresponding acme.json certificate
+            oroute['lets_encrypt_status'] = "pending"
+    return oroute
+
+api_path = os.environ["API_PATH"]
+
+data = json.load(sys.stdin)
+
+# Get the list of routers keys with pagination support
+try:
+    traefik_routes = []
+    page = 1
+    base_url = 'http://127.0.0.1/'
+    api_endpoint = f'{api_path}/api/http/routers'
+    url = urllib.parse.urljoin(base_url, api_endpoint)
+    while True:
+        params = urllib.parse.urlencode({'page': page, 'per_page': 100})
+        with urllib.request.urlopen(f"{url}?{params}") as res:
+            page_routes = json.load(res)
+            traefik_routes.extend(page_routes)
+
+            # Check if there are more pages
+            if ('X-Next-Page' not in res.headers or
+                not res.headers['X-Next-Page'] or
+                int(res.headers['X-Next-Page']) <= page):
+                break
+            else:
+                page = int(res.headers['X-Next-Page'])
+except urllib.error.URLError as e:
+    raise Exception(f'Error reaching traefik daemon: {e.reason}')
+
+# Gernerate the list of routes
+routes = [ route['name'].removesuffix('-https@file') for route in traefik_routes if route['name'].endswith('-https@file') ]
+
+if data != None and data.get('expand_list'):
+    routes = [ decorate_cert_attributes(get_route({'instance': route})) for route in routes ]
+
+json.dump(routes, fp=sys.stdout)

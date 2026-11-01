@@ -1,0 +1,6 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "list-certificates input",
+    "$id": "http://schema.nethserver.org/traefik/list-certificates-input.json",
+    "description": "Placeholder, see bug NethServer/dev#7058"
+}

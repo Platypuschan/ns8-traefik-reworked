@@ -1,0 +1,59 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "get-certificate output",
+    "$id": "http://schema.nethserver.org/traefik/get-certificate-output.json",
+    "description": "Get one or more certificates for the given FQDN.",
+    "examples": [
+        {
+            "fqdn": "example.com",
+            "obtained": true,
+            "type": "internal",
+            "certificates": [
+                {
+                    "cert": "LS0tLS1CRUdJTiBDRVJUSUZJQ0F...",
+                    "key": "LS0tLS1CRUdJTiBQUklWQVRFIEt..."
+                }
+            ]
+        }
+    ],
+    "type": "object",
+    "properties": {
+        "fqdn": {
+            "type": "string",
+            "title": "A fully qualified domain name"
+        },
+        "type": {
+            "type": "string",
+            "enum": [
+                "internal",
+                "custom",
+                "selfsigned"
+            ]
+        },
+        "certificates": {
+            "type": "array",
+            "description": "List of certificates for FQDN, ordered by relevance (high first).",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "cert": {
+                        "type": "string"
+                    },
+                    "key": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "obtained": {
+            "type": "boolean",
+            "title": "true if the certificate was obtained correctly"
+        }
+    },
+    "required": [
+        "fqdn",
+        "type",
+        "certificates",
+        "obtained"
+    ]
+}

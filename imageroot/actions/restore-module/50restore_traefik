@@ -1,0 +1,30 @@
+#!/bin/bash
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+set -e -o pipefail
+
+exec 1>&2 # Redirect to to journal
+
+shopt -s nullglob
+
+# Restore HTTP routes created from the UI:
+for froute in state-backup/manual_flags/* ; do
+    route=$(basename "${froute}")
+    if [[ -f "state-backup/configs/${route}.yml" ]]; then
+        cp -vfT "state-backup/configs/${route}.yml" "configs/${route}.yml"
+        touch "manual_flags/${route}"
+    fi
+done
+
+# Restore uploaded certificates (dynamic config):
+find state-backup/configs -type f -name 'cert_*.yml' -print0 | \
+    xargs -0 -r -- cp -pvt configs/
+
+# Restore uploaded certificates (certificates and private keys):
+find state-backup/custom_certificates -type f -print0 | \
+    xargs -0 -r -- cp -pvt custom_certificates/
+

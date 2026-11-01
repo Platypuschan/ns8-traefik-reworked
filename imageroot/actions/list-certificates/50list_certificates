@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import datetime
+import cert_helpers
+
+DATE_NOW = datetime.datetime.now(datetime.timezone.utc)
+THIRTY_DAYS = datetime.timedelta(days=30)
+
+def main():
+    certificates = []
+    default_cert_names = cert_helpers.read_default_cert_names()
+    names_of_traefik_routers = cert_helpers.read_host_names_of_traefik_routers()
+    for dcert in cert_helpers.list_internal_certificates():
+        ocert = prepare_for_output(dcert)
+        ocert['type'] = 'internal'
+        if set(ocert['names']) == set(default_cert_names):
+            ocert['default'] = True
+        elif set(ocert['names']).intersection(names_of_traefik_routers):
+            ocert['automatic'] = True
+        else:
+            ocert['obsolete'] = True
+        certificates.append(ocert)
+    for dcert in cert_helpers.list_custom_certificates():
+        ocert = prepare_for_output(dcert)
+        ocert['type'] = 'custom'
+        certificates.append(ocert)
+
+    response = {"certificates": certificates}
+    json.dump(response, fp=sys.stdout)
+
+def prepare_for_output(dcert):
+    ocert = dcert.copy()
+    if "traefik_names" in ocert:
+        del ocert["traefik_names"] # for internal use only
+    ocert['valid_from'] = dcert['valid_from'].isoformat()
+    ocert['valid_to'] = dcert['valid_to'].isoformat()
+    if DATE_NOW < dcert['valid_from'] or DATE_NOW > dcert['valid_to']:
+        ocert['validity'] = 'expired'
+    elif DATE_NOW > dcert['valid_to'] - THIRTY_DAYS:
+        ocert['validity'] = 'expiring'
+    else:
+        ocert['validity'] = 'valid'
+    return ocert
+
+if __name__ == "__main__":
+    main()

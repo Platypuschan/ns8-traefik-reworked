@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2023 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import os
+import sys
+import copy
+import json
+import agent
+import tempfile
+
+import yaml
+
+try:
+    instance = sys.argv[1]
+except:
+    instance = 'traefik1'
+
+middlewares = {}
+services = {}
+routers = {}
+
+prefix = f'module/{instance}/kv/'
+rdb = agent.redis_connect(privileged = True)
+
+# HTTP
+for kv in rdb.scan_iter(f'{prefix}http/*'):
+    value = rdb.get(kv)
+    key = kv.removeprefix(f'{prefix}http/')
+    tmp = key.split("/")
+
+    last = kv[kv.rfind('/')+1:]
+    if tmp[0] == "middlewares":
+        if tmp[1] not in middlewares:
+            if last.isnumeric():
+                middlewares[tmp[1]] = { tmp[2]: { tmp[3]: list() } }
+            else:
+                middlewares[tmp[1]] = { tmp[2]: { tmp[3]: {} } }
+        if last.isnumeric():
+            if tmp[3] not in middlewares[tmp[1]][tmp[2]]:
+                middlewares[tmp[1]][tmp[2]][tmp[3]] = list()
+            middlewares[tmp[1]][tmp[2]][tmp[3]].append(value)
+        else:
+            if len(tmp) > 4 and tmp[4] == "insecureSkipVerify":
+                if tmp[3] not in middlewares[tmp[1]][tmp[2]]:
+                    middlewares[tmp[1]][tmp[2]][tmp[3]] = {"insecureSkipVerify": False}
+                middlewares[tmp[1]][tmp[2]][tmp[3]][tmp[4]] = (value == 'True')
+            else:
+                middlewares[tmp[1]][tmp[2]][tmp[3]] = value
+    elif tmp[0] == "services":
+        if tmp[1] not in services:
+            services[tmp[1]] = { "loadBalancer": { "servers": list() } }
+        services[tmp[1]]["loadBalancer"]["servers"].append({"url": value})
+    elif tmp[0] == "routers":
+        if tmp[1] not in routers:
+            if tmp[1].endswith("https") or tmp[1].startswith("certificate-"):
+                routers[tmp[1]] = {"middlewares": list(), "entrypoints": list(), "tls": { "certresolver": {}, "domains": list()}}
+            else:
+                routers[tmp[1]] = {"middlewares": list(), "entrypoints": list()}
+        if len(tmp) == 3:
+            # module/traefik1/kv/http/routers/instance1-https/rule
+            if tmp[2] != "tls": # ignore module/traefik1/kv/http/routers/instance1-https/tls
+                routers[tmp[1]][tmp[2]] = value
+        elif len(tmp) == 4:
+            if tmp[2] == "tls":
+                # module/traefik1/kv/http/routers/instance1-http/tls/certresolver
+                routers[tmp[1]]['tls']['certresolver'] =  value
+            else:
+                # module/traefik1/kv/http/routers/instance1-http/middlewares/0
+                if tmp[2] == "entryPoints":
+                    tmp[2] = tmp[2].lower()
+                routers[tmp[1]][tmp[2]].append(value)
+        else:
+            # module/traefik1/kv/http/routers/instance1-https/tls/domains/0/main
+            routers[tmp[1]]['tls']['domains'].append({last: value})
+
+# Cleanup routes using default cert
+for r in routers:
+    if "tls" in routers[r] and (not routers[r]["tls"]["certresolver"] and not routers[r]["tls"]["domains"]):
+        routers[r]["tls"] = {}
+
+# Remove well-known configs
+middlewares.pop('http2https-redirectscheme', None)
+middlewares.pop('ApisEndpointMw0', None)
+middlewares.pop('ApisEndpointMw1', None)
+middlewares.pop('ApiServerMw1', None)
+middlewares.pop('ApiServerMw2', None)
+middlewares.pop('ApiServer-stripprefix', None)
+routers.pop('ApisEndpointHttp', None)
+routers.pop('ApiServer-https', None)
+routers.pop('ApiServer-http', None)
+services.pop('ApiServer', None)
+
+mroutes = rdb.smembers(f'module/{instance}/user_created_routes')
+os.makedirs("manual_flags", exist_ok=True)
+
+for service in services:
+    if service in mroutes:
+        with open(f'manual_flags/{service}', 'w') as ffp:
+            pass
+    config_service = {"http": { "middlewares": {}, "routers": {}, "services": {service: services[service]}}}
+    for router in routers:
+        if router.startswith(f'{service}-'):
+            config_service["http"]["routers"][router] = copy.deepcopy(routers[router])
+            if "middlewares" in config_service["http"]["routers"][router] and not config_service["http"]["routers"][router]["middlewares"]:
+                del(config_service["http"]["routers"][router]["middlewares"])
+    for middleware in middlewares:
+        if middleware.startswith(f'{service}-'):
+            config_service["http"]["middlewares"][middleware] = copy.deepcopy(middlewares[middleware])
+    if not config_service["http"]["middlewares"]:
+        del(config_service["http"]["middlewares"])
+    with open(f'configs/{service}.yml', 'w') as spm:
+        spm.write(yaml.safe_dump(config_service, default_flow_style=False, sort_keys=False, allow_unicode=True))
+
+# Cleanup redis
+for kv in rdb.scan_iter(f'{prefix}*'):
+    rdb.delete(kv)
+rdb.delete(f'module/{instance}/kv')
+rdb.delete(f'module/{instance}/user_created_routes')
+rdb.close()

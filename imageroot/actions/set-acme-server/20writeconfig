@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import json
+import sys
+import os
+import conf_helpers
+import agent
+
+def main():
+    request = json.load(sys.stdin)
+    curconf = conf_helpers.parse_yaml_config("traefik.yaml")
+    curconf['certificatesResolvers']['acmeServer'].setdefault("acme", {
+        "caServer": "https://acme-v02.api.letsencrypt.org/directory",
+        "storage": "/etc/traefik/acme/acme.json",
+        "email": "",
+        "httpChallenge": {"entryPoint": "http"},
+        "tlsChallenge": False,
+    })
+    curconf['certificatesResolvers']['acmeServer']['acme']["caServer"] = request["url"]
+    curconf['certificatesResolvers']['acmeServer']['acme']["email"] = request.get("email", "")
+    if request.get("challenge") == "HTTP-01":
+        curconf['certificatesResolvers']['acmeServer']['acme']['httpChallenge']['entryPoint'] = 'http'
+        curconf['certificatesResolvers']['acmeServer']['acme']['tlsChallenge'] = False
+    elif request.get("challenge") == "TLS-ALPN-01":
+        curconf['certificatesResolvers']['acmeServer']['acme']['httpChallenge']['entryPoint'] = 'https'
+        curconf['certificatesResolvers']['acmeServer']['acme']['tlsChallenge'] = {}
+    # Changes to Traefik static configuration require a full container restart:
+    conf_helpers.write_yaml_config(curconf, "traefik.yaml")
+    agent.run_helper("systemctl", "--user", "restart", "traefik.service").check_returncode()
+
+if __name__ == "__main__":
+    main()

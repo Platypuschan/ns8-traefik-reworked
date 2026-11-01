@@ -1,0 +1,32 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "set-trusted-proxies input",
+    "$id": "http://schema.nethserver.org/traefik/set-trusted-proxies-input.json",
+    "description": "Set the IP addresses that are trusted as front-end proxies",
+    "examples": [
+        {
+            "depth": 1,
+            "proxies": [
+                "192.168.1.1",
+                "192.168.1.2"
+            ]
+        }
+    ],
+    "type": "object",
+    "required": [
+        "proxies"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "depth": {
+            "type":"integer",
+            "minimum": 0
+        },
+        "proxies": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    }
+}

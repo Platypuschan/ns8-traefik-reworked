@@ -1,0 +1,6 @@
+[Unit]
+Description=Monitor acme.json file for changes
+
+[Path]
+PathChanged=%E/state/acme/acme.json
+Unit=certificate-exporter.service

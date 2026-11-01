@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (C) 2025 Nethesis S.r.l.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+import os
+import json
+import agent
+import sys
+import cert_helpers
+import glob
+
+def main():
+    changed_dns_names = set()
+    for cert_path in glob.glob("state-backup/custom_certificates/*.crt"):
+        print("Restoring", cert_path, file=sys.stderr)
+        with open(cert_path, 'rb') as cf:
+            bcert = cf.read()
+        key_path = cert_path.removesuffix('.crt') + '.key'
+        with open(key_path, 'rb') as kf:
+            bkey = kf.read()
+        names = cert_helpers.extract_certified_names(bcert)
+        notify_certificate_updated_event(names, bcert.decode('utf-8'), bkey.decode('utf-8'))
+        changed_dns_names.update(names)
+    if changed_dns_names:
+        notify_certificate_changed_event(changed_dns_names)
+
+def notify_certificate_changed_event(changed_dns_names):
+    rdb = agent.redis_connect(privileged=True)
+    rdb.publish(f"{os.environ['AGENT_ID']}/event/certificate-changed", json.dumps({
+        "node_id": int(os.environ['NODE_ID']),
+        "module_id": os.environ['MODULE_ID'],
+        "names": list(changed_dns_names),
+    }))
+
+def notify_certificate_updated_event(names : set, scert : str, skey : str):
+    module_id = os.environ['MODULE_ID']
+    node_id = os.environ['NODE_ID']
+    rdb = agent.redis_connect(privileged=True)
+    for name in names:
+        domain = { 'main': name }
+        rkey = f'module/{module_id}/certificate/{name}'
+        rdb.hset(rkey, mapping={"cert": scert, "key": skey, "custom": "true"})
+        event_key = f'module/{module_id}/event/certificate-updated'
+        event = {"rkey": rkey, "node": node_id, "module": module_id, "domain": domain, "custom": True}
+        rdb.publish(event_key, json.dumps(event))
+
+if __name__ == "__main__":
+    main()

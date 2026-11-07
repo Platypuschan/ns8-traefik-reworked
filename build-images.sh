@@ -9,8 +9,9 @@ container=$(buildah from scratch)
 
 buildah add "${container}" imageroot /imageroot
 buildah add "${container}" ui /ui
+# Traefik v3.7.16 OCI index (all supported platforms), verified with skopeo --raw.
 buildah config --entrypoint=/ \
-    --label="org.nethserver.images=docker.io/traefik:v3.7.16" \
+    --label="org.nethserver.images=docker.io/traefik@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65" \
     --label="org.nethserver.flags=core_module" \
     --label="org.opencontainers.image.source=https://github.com/Platypuschan/ns8-traefik-reworked" \
     --label="org.nethserver.min-core=3.17.0-0" \

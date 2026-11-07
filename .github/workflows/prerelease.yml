@@ -1,16 +1,42 @@
 name: Prepare prerelease
 on:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Promote the tested candidate to an immutable prerelease (main only)
+        type: boolean
+        default: false
+        required: true
   push:
     branches: [main]
-    paths: [VERSION, .github/workflows/prerelease.yml]
 permissions:
   contents: read
 concurrency:
   group: prerelease-${{ github.sha }}
   cancel-in-progress: false
 jobs:
+  # Fork PRs have no package-write token: validate locally without registry login.
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y buildah python3-yaml
+      - name: Local regression, syntax and module build validation
+        run: |
+          set -Eeuo pipefail
+          bash -n build-images.sh
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          REPOBASE=localhost/traefik-validation bash build-images.sh
   build:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: [validate]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -22,6 +48,8 @@ jobs:
       version: ${{ steps.images.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - run: sudo apt-get update && sudo apt-get install -y buildah skopeo
       - name: Build the candidate image
         id: images
@@ -65,7 +93,7 @@ jobs:
       script: ${{ matrix.bootstrap && 'tests/bootstrap-rocky.sh' || '' }}
       args: ${{ matrix.bootstrap && needs.build.outputs.image || '-v SCENARIO:update' }}
   publish:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main' }}
     needs: [build, qemu]
     runs-on: ubuntu-24.04
     permissions:

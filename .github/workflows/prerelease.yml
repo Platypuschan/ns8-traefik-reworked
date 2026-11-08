@@ -8,6 +8,11 @@ on:
         type: boolean
         default: false
         required: true
+      stable:
+        description: Mark the promoted release as stable (latest) instead of a prerelease
+        type: boolean
+        default: false
+        required: false
   push:
     branches: [main]
 permissions:
@@ -107,6 +112,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IMAGE: ${{ needs.build.outputs.image }}
           VERSION: ${{ needs.build.outputs.version }}
+          STABLE: ${{ inputs.stable }}
         run: |
           set -Eeuo pipefail
           printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -119,4 +125,6 @@ jobs:
           grep -qiE 'manifest unknown|name unknown' "$error" || { cat "$error" >&2; exit 1; }
           digest="$(skopeo inspect "docker://$IMAGE" --format '{{.Digest}}')"
           skopeo copy --preserve-digests "docker://${IMAGE%:*}@$digest" "docker://$destination"
-          gh release create "$VERSION" --target "$GITHUB_SHA" --prerelease --title "traefik-reworked $VERSION" --notes-file RELEASE_NOTES.md
+          # Only an explicit stable dispatch becomes the latest release.
+          if [[ "$STABLE" == true ]]; then flag=--latest; else flag=--prerelease; fi
+          gh release create "$VERSION" --target "$GITHUB_SHA" "$flag" --title "traefik-reworked $VERSION" --notes-file RELEASE_NOTES.md

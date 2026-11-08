@@ -59,8 +59,11 @@ If not otherwise stated, all parameters are optional:
 
 - `client_certificates`: if `true`, request a TLS client certificate and
   forward its PEM to the backend, after removing inbound certificate
-  headers. Requires `host` and `http2https`. All routes of a hostname must
-  use the same value, and the backend must authorize the certificate. The
+  headers (first in the middleware chain, before IP allow list and
+  forward auth). Requires `host` and `http2https`, otherwise the task fails
+  with `client_certificates_requires_host_and_http2https`. All routes of a
+  hostname must use the same value (a warning is logged otherwise), and the
+  backend must authorize the certificate. The
   action does not wait for the route, because Traefik drops the routers of
   a hostname while their TLS options differ.
 

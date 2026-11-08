@@ -1,7 +1,11 @@
-Erste Vorabversion des angepassten Traefik-Moduls für NethServer 8, basierend auf ns8-traefik 4.2.5 mit Traefik 3.7.16.
+Erste stabile Version des angepassten Traefik-Moduls für NethServer 8, basierend auf ns8-traefik 4.2.5. Löst die Vorabversion 4.2.5-reworked.1 ab.
 
-- `set-route` und `get-route` kennen das optionale Feld `client_certificates`. Damit fragt eine Route ein TLS-Clientzertifikat an und reicht es an das Modul weiter. idp-reworked braucht das für die Anmeldung mit Gerätezertifikat. Bestehende Routen ändern sich nicht.
-- Installation auf einem Knoten: `api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/traefik-reworked:4.2.5-reworked.1","instances":["traefik1"]}'`.
-- Danach überspringen Core-Updates das Modul. Upstream-Traefik-Updates kommen nur noch über dieses Repository.
+- **Sicherheitsupdate:** Traefik 3.7.17 statt 3.7.16. Behebt [GHSA-xv5x-242w-7hf7](https://github.com/traefik/traefik/security/advisories/GHSA-xv5x-242w-7hf7) (hoch): unauthentifizierte Clients konnten über `Authorization: NTLM`/`Negotiate` Speicher, Dateideskriptoren und Backend-Verbindungen erschöpfen (betraf 3.7.14 bis 3.7.16). Die Runtime ist weiter auf den geprüften Multi-Arch-Digest gepinnt. Traefik 3.7.17 ist mit Go 1.27 gebaut: Für eingehende TLS-Verbindungen sind RSA-Schlüsselaustausch, 3DES sowie TLS 1.0/1.1 standardmäßig aus.
+- `client_certificates` (Route-Option, unverändert in der Bedeutung): Die Header `X-Forwarded-Tls-Client-Cert` und `X-Forwarded-Tls-Client-Cert-Info` werden jetzt von den **ersten** Middlewares der Route entfernt und gesetzt. Vorher lief das nach `ip_allowlist`, Weiterleitungs-/Auth-Middleware; ein von außen mitgeschickter Header erreichte dadurch einen `forward_auth`-Server.
+- `set-route` meldet fehlendes `host`/`http2https` bei `client_certificates` jetzt als strukturierte Validierung (`client_certificates_requires_host_and_http2https`) statt als Python-Traceback und schreibt dann keine Konfiguration.
+- Widersprechen sich zwei Routen desselben Hosts in `client_certificates`, steht eine Warnung im Journal (Traefik kann beide nicht bedienen). Die Aufgabe bricht deshalb nicht ab.
+- Neue Python-Tests für `set-route`; Release-Workflow kann eine Version mit dem Dispatch-Schalter `stable` als stabil (latest) statt als Vorabversion veröffentlichen.
 
-Keine Stable- oder Katalogfreigabe; Vorabversion für Testinstallationen. Geprüft als Update eines bestehenden `traefik1` im NS8-Test (Debian 13, Rocky 9). Nicht abgedeckt: Knoten mit echten Let's-Encrypt-Zertifikaten und mehrere Knoten.
+Installation oder Update eines Knotens: `api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/traefik-reworked:4.2.5-reworked.2","instances":["traefik1"]}'`. Danach überspringen Core-Updates das Modul; Upstream-Traefik-Updates kommen nur noch über dieses Repository.
+
+Keine Katalogfreigabe. Geprüft per CI (Python-Tests, Build, QEMU Debian 13 und Rocky 9 als Update eines bestehenden `traefik1`). Nicht abgedeckt: Knoten mit echten Let's-Encrypt-Zertifikaten, mehrere Knoten, Live-Test mit einem Browser-Clientzertifikat nach dem Update.

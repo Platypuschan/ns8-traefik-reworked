@@ -39,6 +39,12 @@ class BuildSafetyTests(unittest.TestCase):
                     self.assertEqual(result, event == 'workflow_dispatch' and ref == 'refs/heads/main' and publish,
                                      (event, ref, publish))
         promotion = workflow['jobs']['publish']['steps'][-1]['run']
+        stable_input = triggers['workflow_dispatch']['inputs'].get('stable', {})
+        self.assertEqual(stable_input.get('type'), 'boolean')
+        self.assertEqual(stable_input.get('default'), 'false')
+        self.assertIn('--prerelease', promotion)
+        self.assertIn('--latest', promotion)
+        self.assertIn('"$STABLE" == true', promotion)
         self.assertIn('Refusing to overwrite', promotion)
         self.assertIn('grep -qiE', promotion)
         self.assertIn('skopeo copy --preserve-digests', promotion)
@@ -87,7 +93,7 @@ class BuildSafetyTests(unittest.TestCase):
 
     def test_runtime_is_pinned_to_verified_multiarch_index(self):
         script = (ROOT / 'build-images.sh').read_text()
-        self.assertIn('docker.io/traefik@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65', script)
+        self.assertIn('docker.io/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a', script)
         self.assertNotRegex(script, r'org.nethserver.images=docker.io/traefik:v')
 
 

@@ -16,6 +16,7 @@ import sys
 import os
 import yaml
 import copy
+import glob
 import agent
 import cert_helpers
 from get_route import get_route
@@ -80,6 +81,10 @@ router_https = copy.deepcopy(route)
 router_https['entryPoints'] = ["https"]
 router_https["tls"] = {}
 #router_https = route_s
+if data.get('client_certificates') and (not data.get('host') or not data.get('http2https')):
+    agent.set_status('validation-failed')
+    json.dump([{'field':'client_certificates', 'parameter':'client_certificates', 'value': True, 'error':'client_certificates_requires_host_and_http2https'}], fp=sys.stdout)
+    sys.exit(4)
 if data.get("host") is not None:
     router_https["tls"]["domains"] = [{"main": data["host"].lower()}]
     # Enable or disable Let's Encrypt certificate
@@ -154,17 +159,38 @@ if "headers" in data and data["headers"]:
 # backend's responsibility: RequestClientCert accepts self-signed certificates.
 # Every HTTPS router of a hostname MUST select the same options (TLS uses SNI,
 # not the HTTP path). One shared, identical option avoids per-path conflicts.
-# Strip inbound headers AFTER user-configured middleware, then set from TLS.
+# The inbound certificate headers are removed and set from the TLS session by
+# the FIRST middlewares, so no later middleware (e.g. forwardAuth, which
+# forwards the request headers to the authentication server) sees a spoofed
+# value.
 if data.get('client_certificates'):
-    if not data.get('host') or not data.get('http2https'):
-        raise ValueError('client_certificates requires a host and HTTPS redirection')
     router_https['tls']['options'] = 'ns8-client-certificates@file'
     clear_name = f'{data["instance"]}-client-cert-clear'
     pass_name = f'{data["instance"]}-client-cert-pass'
     middlewares[clear_name] = {'headers': {'customRequestHeaders': {
         'X-Forwarded-Tls-Client-Cert': '', 'X-Forwarded-Tls-Client-Cert-Info': ''}}}
     middlewares[pass_name] = {'passTLSClientCert': {'pem': True}}
-    router_https['middlewares'].extend([clear_name, pass_name])
+    router_https['middlewares'][0:0] = [clear_name, pass_name]
+
+# Routes of one hostname that disagree on the TLS options make Traefik drop
+# or downgrade the routers. Do not block the task (the other route may be
+# updated next), but leave a trace in the journal.
+if data.get('host'):
+    wanted = 'ns8-client-certificates@file' if data.get('client_certificates') else None
+    for other_file in glob.glob('configs/*.yml'):
+        if os.path.basename(other_file) in (f'{data["instance"]}.yml', ) or os.path.basename(other_file).startswith('_'):
+            continue
+        try:
+            with open(other_file) as ofile:
+                other_routers = ((yaml.safe_load(ofile) or {}).get('http') or {}).get('routers') or {}
+        except Exception:
+            continue
+        for other_name, other_router in other_routers.items():
+            other_tls = other_router.get('tls')
+            if other_name.endswith('-https') and isinstance(other_tls, dict) and f'Host(`{data["host"].lower()}`)' in other_router.get('rule', ''):
+                other_options = other_tls.get('options') or None
+                if other_options != wanted:
+                    print(f'WARNING: route {other_name} of host {data["host"]} uses different TLS client certificate settings; Traefik cannot serve both', file=sys.stderr)
 
 # Enable or disable HTTP 2 HTTPS redirection
 if data.get("http2https"):

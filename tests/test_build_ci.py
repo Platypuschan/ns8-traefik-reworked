@@ -45,6 +45,13 @@ class BuildSafetyTests(unittest.TestCase):
         self.assertIn('--prerelease', promotion)
         self.assertIn('--latest', promotion)
         self.assertIn('"$STABLE" == true', promotion)
+        self.assertIn('needs a version without suffix', promotion)
+        self.assertIn('must be released as stable', promotion)
+        import re
+        version_check = re.search(r'\[\[ "\$version" =~ (.+?) \]\]', workflow['jobs']['build']['steps'][-1]['run']).group(1)
+        pattern = version_check.replace('\\.', '.').replace('\\', '')
+        for version, ok in (('4.2.6', True), ('4.2.5-reworked.2', True), ('4.2.6-rc.1', False), ('latest', False)):
+            self.assertEqual(bool(re.fullmatch(pattern.lstrip('^').rstrip('$'), version)), ok, version)
         self.assertIn('Refusing to overwrite', promotion)
         self.assertIn('grep -qiE', promotion)
         self.assertIn('skopeo copy --preserve-digests', promotion)

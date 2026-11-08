@@ -10,6 +10,8 @@ Traefik is a core module, so it is replaced in place:
 api-cli run cluster/update-module --data '{"module_url":"ghcr.io/platypuschan/traefik-reworked:VERSION","instances":["traefik1"]}'
 ```
 
+Alternatively enable the catalog `platypuschan` (see [ns8-modules](https://github.com/Platypuschan/ns8-modules)); Traefik is a core module, so it shows up as an update under core apps, not as an installable app.
+
 After this the instance source is this repository. Core updates skip it, so upstream Traefik updates arrive only through a new version here. To return to upstream, run the same command with `ghcr.io/nethserver/traefik:VERSION`, with `"force":true` if that version is lower. Disable certificate sign-in in the applications first.
 
 This module implements a proxy for web applications using [Traefik](https://doc.traefik.io/traefik/).

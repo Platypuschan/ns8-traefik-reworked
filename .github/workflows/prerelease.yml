@@ -64,7 +64,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           version="$(cat VERSION)"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-reworked\.[0-9]+$ ]] || exit 64
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-reworked\.[0-9]+)?$ ]] || exit 64
           base="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           tag="candidate-${HEAD_SHA:0:12}"
           printf '%s' "$GH_TOKEN" | buildah login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -125,6 +125,10 @@ jobs:
           grep -qiE 'manifest unknown|name unknown' "$error" || { cat "$error" >&2; exit 1; }
           digest="$(skopeo inspect "docker://$IMAGE" --format '{{.Digest}}')"
           skopeo copy --preserve-digests "docker://${IMAGE%:*}@$digest" "docker://$destination"
+          # The NS8 catalog treats a version without suffix as stable and any
+          # suffix as testing: the dispatch flag and the version must agree.
+          if [[ "$STABLE" == true && "$VERSION" == *-* ]]; then echo "Stable release needs a version without suffix: $VERSION" >&2; exit 1; fi
+          if [[ "$STABLE" != true && "$VERSION" != *-* ]]; then echo "Version $VERSION has no suffix and must be released as stable" >&2; exit 1; fi
           # Only an explicit stable dispatch becomes the latest release.
           if [[ "$STABLE" == true ]]; then flag=--latest; else flag=--prerelease; fi
           gh release create "$VERSION" --target "$GITHUB_SHA" "$flag" --title "traefik-reworked $VERSION" --notes-file RELEASE_NOTES.md

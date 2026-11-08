@@ -9,9 +9,11 @@ container=$(buildah from scratch)
 
 buildah add "${container}" imageroot /imageroot
 buildah add "${container}" ui /ui
-# Traefik v3.7.17 OCI index (all supported platforms), verified with skopeo --raw.
+# Traefik runtime: tag and OCI index digest (all supported platforms) are kept
+# in sync by Renovate. The module label references the digest only.
+TRAEFIK_IMAGE="docker.io/traefik:v3.7.17@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a"
 buildah config --entrypoint=/ \
-    --label="org.nethserver.images=docker.io/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a" \
+    --label="org.nethserver.images=${TRAEFIK_IMAGE%%:*}@${TRAEFIK_IMAGE##*@}" \
     --label="org.nethserver.flags=core_module" \
     --label="org.opencontainers.image.source=https://github.com/Platypuschan/ns8-traefik-reworked" \
     --label="org.nethserver.min-core=3.17.0-0" \

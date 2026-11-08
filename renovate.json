@@ -1,6 +1,67 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "local>NethServer/.github:ns8-automerge"
+  "extends": ["config:recommended", ":pinDigestsDisabled"],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "vulnerabilityAlerts": {
+    "schedule": ["at any time"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Traefik runtime image (tag and multi-arch index digest) pinned in build-images.sh",
+      "managerFilePatterns": ["/^build-images\\.sh$/"],
+      "matchStrings": [
+        "TRAEFIK_IMAGE=\"docker\\.io/traefik:(?<currentValue>v\\d+\\.\\d+\\.\\d+)@(?<currentDigest>sha256:[0-9a-f]{64})\""
+      ],
+      "depNameTemplate": "docker.io/traefik",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Traefik runtime is part of the module: every update raises the module VERSION (plain SemVer patch, so the NS8 catalog keeps treating it as stable)",
+      "matchDepNames": ["docker.io/traefik"],
+      "commitMessageTopic": "Traefik",
+      "minimumReleaseAge": "3 days",
+      "bumpVersions": [
+        {
+          "name": "Raise the module version",
+          "filePatterns": ["VERSION"],
+          "matchStrings": ["^(?<version>\\d+\\.\\d+\\.\\d+)\\s*$"],
+          "bumpType": "patch"
+        }
+      ]
+    },
+    {
+      "description": "Traefik minor/patch releases: merge automatically once all CI checks (incl. QEMU update tests) are green",
+      "matchDepNames": ["docker.io/traefik"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "ignoreTests": false
+    },
+    {
+      "description": "Major Traefik releases always need a manual review",
+      "matchDepNames": ["docker.io/traefik"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "GitHub Actions do not change the module image",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Runner images are not updated automatically across majors",
+      "matchDepNames": ["ubuntu"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
   ]
 }

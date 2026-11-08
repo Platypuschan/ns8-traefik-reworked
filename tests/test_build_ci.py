@@ -1,6 +1,7 @@
 """Build/release regression contracts; run with python3 -m unittest discover -s tests."""
 from pathlib import Path
 import json
+import re
 import subprocess
 import unittest
 
@@ -100,8 +101,23 @@ class BuildSafetyTests(unittest.TestCase):
 
     def test_runtime_is_pinned_to_verified_multiarch_index(self):
         script = (ROOT / 'build-images.sh').read_text()
-        self.assertIn('docker.io/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a', script)
+        pin = re.search(r'^TRAEFIK_IMAGE="docker\.io/traefik:(v\d+\.\d+\.\d+)@(sha256:[0-9a-f]{64})"$', script, re.M)
+        self.assertIsNotNone(pin, 'Renovate pin line TRAEFIK_IMAGE is missing or malformed')
+        self.assertIn('--label="org.nethserver.images=${TRAEFIK_IMAGE%%:*}@${TRAEFIK_IMAGE##*@}"', script)
         self.assertNotRegex(script, r'org.nethserver.images=docker.io/traefik:v')
+        # The label must expand to the bare digest reference.
+        label = subprocess.run(['bash', '-c', 'source <(sed -n "/^TRAEFIK_IMAGE=/p" "$1"); echo "${TRAEFIK_IMAGE%%:*}@${TRAEFIK_IMAGE##*@}"', '_', str(ROOT / 'build-images.sh')],
+                               check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(label, 'docker.io/traefik@' + pin.group(2))
+
+    def test_renovate_pin_is_tracked_and_bumps_version(self):
+        config = json.loads((ROOT / 'renovate.json').read_text())
+        manager = next(m for m in config['customManagers'] if m['depNameTemplate'] == 'docker.io/traefik')
+        script = (ROOT / 'build-images.sh').read_text()
+        for pattern in manager['matchStrings']:
+            self.assertRegex(script, pattern.replace('(?<', '(?P<'))
+        rule = next(r for r in config['packageRules'] if r.get('matchDepNames') == ['docker.io/traefik'] and 'bumpVersions' in r)
+        self.assertEqual(rule['bumpVersions'][0]['filePatterns'], ['VERSION'])
 
 
 if __name__ == '__main__':

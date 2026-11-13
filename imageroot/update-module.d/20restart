@@ -5,4 +5,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 
+# A failed hook does not stop the update, so check the result of 15upgrade_v3
+# here: the new Traefik must not start with a configuration in the old syntax.
+# The running service keeps working until the migration succeeds.
+if ! grep -qE '^[[:space:]]+defaultRuleSyntax:[[:space:]]*v3[[:space:]]*$' traefik.yaml 2>/dev/null; then
+    echo "traefik.yaml is not upgraded to Traefik v3 yet; not restarting traefik.service" >&2
+    exit 1
+fi
+
 systemctl --user restart traefik.service

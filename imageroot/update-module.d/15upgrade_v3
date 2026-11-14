@@ -10,6 +10,7 @@ import sys
 import agent
 import yaml
 import glob
+import shutil
 import cert_helpers
 
 yaml_options = {
@@ -40,9 +41,12 @@ def upgrade_to_v3(static_cfg):
     print("Upgrading configuration for Traefik v3")
     agent.run_helper("mkdir", "-vp", "acme")
     agent.run_helper("podman", "cp", "traefik:/etc/traefik/acme/acme.json", "acme/acme.json")
-    agent.run_helper("cp", "-vfT", "traefik.yaml", "traefik.yaml.v2")
-    agent.run_helper("cp", "-rvfT", "configs", "configs.v2")
-    agent.run_helper("cp", "-rvfT", "custom_certificates", "custom_certificates.v2")
+    # Keep the first backup: a repeated run starts from a partly converted
+    # configuration, and must not overwrite the original v2 files with it.
+    keep_backup("traefik.yaml", "traefik.yaml.v2")
+    keep_backup("configs", "configs.v2")
+    keep_backup("custom_certificates", "custom_certificates.v2")
+    errors = []
     # Merge special routers for certificates into one default certificate:
     defcertnames = list()
     certificate_config_files = list(glob.glob("./configs/certificate-*.yml"))
@@ -50,9 +54,14 @@ def upgrade_to_v3(static_cfg):
         try:
             with open(config_file) as ofile:
                 certdyn = yaml.safe_load(ofile) or {}
-                upgrade_as_default_certificate(certdyn, defcertnames)
+            # A router that is not as expected is skipped and removed with
+            # its file: the original is kept in configs.v2.
+            upgrade_as_default_certificate(certdyn, defcertnames)
         except Exception as ex:
+            # The file cannot be read: keep it for the next run.
             print("ERROR", config_file, ex, file=sys.stderr)
+            errors.append(config_file)
+            continue
         os.unlink(config_file)
         print("Remove certificate config file:", config_file, file=sys.stderr)
     if defcertnames:
@@ -70,6 +79,12 @@ def upgrade_to_v3(static_cfg):
             write_dynamic_config(config_file, dynamic_config)
         except Exception as ex:
             print("ERROR", config_file, ex, file=sys.stderr)
+            errors.append(config_file)
+    if errors:
+        # Do not record the v3 syntax: the next update runs this migration
+        # again, and 20restart does not restart Traefik meanwhile.
+        print("Upgrade for Traefik v3 incomplete, not marking it done:", errors, file=sys.stderr)
+        sys.exit(1)
     write_static_cfg(static_cfg)
 
 def upgrade_as_default_certificate(certdyn : dict, defcertnames : list):
@@ -127,6 +142,16 @@ def upgrade_http_to_v3(ohttp):
                 if 'forceSlash' in omw['stripPrefix']:
                     del omw['stripPrefix']['forceSlash']
                     print(f"Removed forceSlash option from middleware {kmiddleware}")
+
+def keep_backup(source, backup):
+    """Copy source to backup unless a backup exists already."""
+    if os.path.lexists(backup) or not os.path.lexists(source):
+        return
+    if os.path.isdir(source):
+        shutil.copytree(source, backup, symlinks=True)
+    else:
+        shutil.copy2(source, backup)
+    print(f"Backup of {source}: {backup}")
 
 def write_dynamic_config(config_file, dynamic_config):
     """Atomically overwrite a Traefik dynamic config file with a new

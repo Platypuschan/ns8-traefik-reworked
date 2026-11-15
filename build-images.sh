@@ -11,7 +11,7 @@ buildah add "${container}" imageroot /imageroot
 buildah add "${container}" ui /ui
 # Traefik runtime: tag and OCI index digest (all supported platforms) are kept
 # in sync by Renovate. The module label references the digest only.
-TRAEFIK_IMAGE="docker.io/traefik:v3.7.17@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a"
+TRAEFIK_IMAGE="docker.io/traefik:v3.7.19@sha256:aa942a00bce033c909bf1f7e861d93761be4b31a035f10d2410d33e38a8f41cf"
 buildah config --entrypoint=/ \
     --label="org.nethserver.images=${TRAEFIK_IMAGE%%:*}@${TRAEFIK_IMAGE##*@}" \
     --label="org.nethserver.flags=core_module" \

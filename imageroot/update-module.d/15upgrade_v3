@@ -24,6 +24,7 @@ def main():
     static_cfg = yaml.safe_load(open("traefik.yaml"))
     upgrade_to_v3(static_cfg)
     add_metrics(static_cfg) # 3.5+
+    add_access_log_user_agent(static_cfg)
 
 def add_metrics(static_cfg):
     if 'metrics' in static_cfg.get('entryPoints', {}):
@@ -31,6 +32,23 @@ def add_metrics(static_cfg):
     print("Add Traefik metrics endpoint configuration for version 3.5+")
     static_cfg['entryPoints']['metrics'] = {"address": ":8082"}
     static_cfg['metrics'] = {"prometheus": {"entryPoint": "metrics"}}
+    write_static_cfg(static_cfg)
+
+def add_access_log_user_agent(static_cfg):
+    # Keep the User-Agent (and only it) in the access log, so that security
+    # monitoring such as CrowdSec can recognise scanners. Only the default
+    # access log is changed ("accessLog: {}" or a bare "accessLog:"): a
+    # missing accessLog (access log disabled) or a custom one is left alone.
+    if 'accessLog' not in static_cfg or static_cfg['accessLog'] not in ({}, None):
+        return # nothing to do
+    static_cfg['accessLog'] = {
+        "fields": {
+            "headers": {
+                "defaultMode": "drop",
+                "names": {"User-Agent": "keep"},
+            },
+        },
+    }
     write_static_cfg(static_cfg)
 
 def upgrade_to_v3(static_cfg):

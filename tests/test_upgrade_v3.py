@@ -105,6 +105,49 @@ class UpgradeV3(unittest.TestCase):
         self.assertFalse((self.home / "traefik.yaml.v2").exists())
 
 
+class AccessLogUserAgent(unittest.TestCase):
+    """Keep only the User-Agent request header in the access log (upstream NethServer/ns8-traefik#152) so that
+    scanners can be recognised by their User-Agent; every other header (Cookie, Authorization, Referer) stays dropped."""
+    V3 = "core:\n  defaultRuleSyntax: v3\nentryPoints:\n  metrics:\n    address: ':8082'\n"
+
+    def setUp(self):
+        helper = UpgradeV3("run_hook")
+        helper.setUp()
+        self.helper = helper
+        self.addCleanup(helper.tearDown)
+
+    def hook(self, static):
+        (self.helper.home / "traefik.yaml").write_text(static)
+        result = self.helper.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        import yaml
+        return yaml.safe_load(self.helper.static())
+
+    def test_default_access_log_keeps_only_the_user_agent(self):
+        for default in ("accessLog: {}\n", "accessLog:\n"):
+            cfg = self.hook(self.V3 + default)
+            self.assertEqual(cfg["accessLog"], {"fields": {"headers": {"defaultMode": "drop", "names": {"User-Agent": "keep"}}}})
+
+    def test_a_customised_access_log_is_left_untouched(self):
+        custom = "accessLog:\n  filePath: /tmp/x.log\n  format: json\n"
+        cfg = self.hook(self.V3 + custom)
+        self.assertEqual(cfg["accessLog"], {"filePath": "/tmp/x.log", "format": "json"})
+
+    def test_a_disabled_access_log_stays_disabled(self):
+        self.assertNotIn("accessLog", self.hook(self.V3))
+
+    def test_running_twice_changes_nothing(self):
+        first = self.hook(self.V3 + "accessLog: {}\n")
+        again = self.hook(self.helper.static())
+        self.assertEqual(first, again)
+
+    def test_new_modules_get_the_setting(self):
+        text = (ROOT / "imageroot" / "actions" / "create-module" / "10expandconfig").read_text()
+        self.assertIn("defaultMode: drop", text)
+        self.assertIn("User-Agent: keep", text)
+        self.assertNotIn("accessLog: {}", text)
+
+
 class RestartGuard(unittest.TestCase):
     def run_restart(self, static):
         with tempfile.TemporaryDirectory() as tmp:

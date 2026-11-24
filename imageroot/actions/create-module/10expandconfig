@@ -21,7 +21,12 @@ log:
   level: INFO
   noColor: true
 
-accessLog: {}
+accessLog:
+  fields:
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
 
 entryPoints:
   http:

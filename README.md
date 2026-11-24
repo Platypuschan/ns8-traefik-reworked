@@ -608,7 +608,7 @@ api-cli run module/traefik1/set-trusted-proxies --data '{"depth": 1, "proxies": 
 After setting trusted proxies, the correct public IP will appear in logs:
 
 ```
-Aug 20 10:51:11 ns8-leader traefik[1916]: xxx.xxx.xxx.xxx - - [20/Aug/2025:08:51:11 +0000] "POST /api/v4/channels/members/me/view HTTP/1.1" 200 42 "-" "-" 221 "mattermost1-https@file" "http://127.0.0.1:20001" 1ms
+Aug 20 10:51:11 ns8-leader traefik[1916]: xxx.xxx.xxx.xxx - - [20/Aug/2025:08:51:11 +0000] "POST /api/v4/channels/members/me/view HTTP/1.1" 200 42 "-" "Mozilla/5.0 (X11; Linux x86_64)" 221 "mattermost1-https@file" "http://127.0.0.1:20001" 1ms
 ```
 
 ---
